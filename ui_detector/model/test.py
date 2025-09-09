@@ -5,7 +5,7 @@ import os
 
 def main():
 
-    model_path = 'runs/detect/ui_detector_model_v0.12/weights/best.pt'
+    model_path = 'ui_detector/model/v0.2.pt'
     model = YOLO(model_path)
 
     image_to_predict = 'ui_detector/model/image.png'
@@ -29,7 +29,7 @@ def main():
     
     annotated_image_bgr = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
     
-    output_filename = "result.png"
+    output_filename = "result2.png"
     
     cv2.imwrite(output_filename, annotated_image_bgr)
     

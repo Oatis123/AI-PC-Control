@@ -7,26 +7,30 @@ def main():
 
     print(f"Training device: {device}")
 
-    config = "ui_detector/train_data_v3/data.yaml"
+    config = "ui_detector/model/train_data_v0.3/data.yaml"
 
-    model_size = "yolov8l.pt"
+    model_size = "yolov8m.pt"
 
     epochs = 500
-    image_size = 640
-    model_folder_name = "ui_detector_model_v0.3"
+    image_size = 720
+    model_folder_name = "ui_detector_model_v0.4"
 
     model = YOLO(model_size)
 
     print("Train Starting...")
+
     result = model.train(
         data=config,
         epochs=epochs,
         imgsz=image_size,
         device=device,
-        name=model_folder_name
+        name=model_folder_name,
+        patience=50
     )
+
     print("Train complete")
-    print(f"Model save deructory: {result.save_dir}")
+    print(f"Model save derictory: {result.save_dir}")
+
 
 if __name__ == "__main__":
     main()
