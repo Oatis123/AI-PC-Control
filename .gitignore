@@ -1,6 +1,11 @@
-train_data
 venv
 runs
 test
 train 
 valid
+images
+labels
+train.jsonl
+valid.jsonl
+convert_to_yolo.py
+ui_detector/model/last.pt

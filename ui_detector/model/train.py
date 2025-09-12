@@ -7,12 +7,12 @@ def main():
 
     print(f"Training device: {device}")
 
-    config = "ui_detector/model/train_data_v0.3/data.yaml"
+    config = "ui_detector/model/train_data_v0.4/yolo_dataset/data.yaml"
 
-    model_size = "yolov8m.pt"
+    model_size = "ui_detector/model/last.pt"
 
     epochs = 500
-    image_size = 720
+    image_size = 640
     model_folder_name = "ui_detector_model_v0.4"
 
     model = YOLO(model_size)
@@ -25,7 +25,8 @@ def main():
         imgsz=image_size,
         device=device,
         name=model_folder_name,
-        patience=50
+        patience=50, 
+        batch=8
     )
 
     print("Train complete")
