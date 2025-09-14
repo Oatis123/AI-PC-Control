@@ -9,3 +9,4 @@ train.jsonl
 valid.jsonl
 convert_to_yolo.py
 ui_detector/model/last.pt
+__pycache__

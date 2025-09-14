@@ -148,7 +148,7 @@ def start_application(app_name: str)->bool:
     return _start_application_by_name(app_name=app_name)
 
 
-#@tool
+@tool
 def get_open_windows():
     """Возвращает список всех открытых сейчас приложений."""
     desktop = Desktop(backend="uia")
@@ -304,7 +304,134 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
         return f"Произошла ошибка: Окно с именем '{name}' не найдено после ожидания."
     except Exception as e:
         return f"Произошла непредвиденная ошибка при работе с '{name}': {e}"
+    
 
+def interact_with_element_by_rect(
+    name: str,
+    rectangle: Dict[str, int],
+    action: str,
+    text_to_set: Optional[str] = None
+) -> Union[str, Any]:
+    """
+    Находит UI-элемент по его координатам (rectangle) и выполняет над ним действие.
+    Перед взаимодействием активирует окно, если оно неактивно.
 
-#print(get_open_windows())
-print(scrape_application("GitHub Desktop"))
+    Args:
+        name (str): Часть заголовка окна приложения для поиска.
+        rectangle (Dict[str, int]): Словарь с координатами элемента.
+                                    Должен содержать ключи: 'left', 'top', 'right', 'bottom'.
+        action (str): Действие для выполнения. Поддерживаемые действия:
+                      'click', 'double_click', 'right_click', 'set_text', 'get_text'.
+        text_to_set (Optional[str]): Текст для ввода (обязателен для действия 'set_text').
+
+    Returns:
+        Union[str, Any]:
+            - Строка с сообщением об успехе или ошибке.
+            - Результат действия (например, текст элемента для 'get_text').
+    """
+    try:
+        desktop = Desktop(backend="uia")
+        main_win_spec = desktop.window(title_re=f".*{name}.*", found_index=0)
+
+        if not main_win_spec.exists(timeout=20):
+            return f"Ошибка: Окно с именем '{name}' не найдено."
+
+        main_win = main_win_spec.wrapper_object()
+        
+        if not main_win.is_active():
+            main_win.set_focus()
+            main_win_spec.wait('active', timeout=20)
+
+        target_element = None
+        for element in main_win.descendants():
+            try:
+                if not element.is_visible():
+                    continue
+
+                elem_rect = element.rectangle()
+                if (elem_rect.left == rectangle['left'] and
+                    elem_rect.top == rectangle['top'] and
+                    elem_rect.right == rectangle['right'] and
+                    elem_rect.bottom == rectangle['bottom']):
+                    
+                    target_element = element
+                    break
+            except Exception:
+                continue
+
+        if not target_element:
+            return f"Ошибка: Элемент с координатами {rectangle} не найден."
+
+        action = action.lower()
+        if action == 'click':
+            target_element.click_input()
+        elif action == 'double_click':
+            target_element.double_click_input()
+        elif action == 'right_click':
+            target_element.right_click_input()
+        
+        # --- ИЗМЕНЕННЫЙ БЛОК ---
+        elif action == 'set_text':
+            if text_to_set is None:
+                return "Ошибка: для действия 'set_text' необходимо передать аргумент 'text_to_set'."
+            
+            # 1. Сначала кликаем на элемент, чтобы гарантированно установить фокус
+            target_element.click_input()
+            
+            # 2. Затем печатаем текст, как это делал бы пользователь
+            target_element.type_keys(text_to_set, with_spaces=True)
+        # --- КОНЕЦ ИЗМЕНЕННОГО БЛОКА ---
+            
+        elif action == 'get_text':
+            return target_element.window_text()
+        else:
+            return f"Ошибка: Неизвестное действие '{action}'."
+
+        return f"Действие '{action}' успешно выполнено."
+
+    except ElementNotFoundError:
+        return f"Ошибка: Окно с именем '{name}' не найдено."
+    except Exception as e:
+        # Теперь выводим более детальную информацию об ошибке
+        return f"Произошла непредвиденная ошибка: {type(e).__name__}: {e}"
+    
+
+@tool
+def execute_bash_command(command: str) -> str:
+    """
+    Выполняет команду в bash терминале и возвращает ее результат.
+    Используй этот инструмент для проверки файлов, навигации по системе или запуска скриптов.
+    ВНИМАНИЕ: Не используй команды, которые могут удалить файлы или нанести вред системе (например, 'rm' или 'sudo').
+    
+    Args:
+        command (str): Команда для выполнения, например 'ls -la'.
+    """
+    # Устанавливаем тайм-аут для предотвращения "зависших" процессов
+    timeout_seconds = 15
+    
+    try:
+        # Выполняем команду
+        result = subprocess.run(
+            command, 
+            shell=True,          # Позволяет выполнять сложные команды, но требует осторожности
+            capture_output=True, # Захватывает stdout и stderr
+            text=True,           # Возвращает вывод в виде текста (str)
+            timeout=timeout_seconds
+        )
+
+        # Проверяем, была ли ошибка при выполнении
+        if result.returncode != 0:
+            return f"Ошибка выполнения команды:\nСтатус код: {result.returncode}\nStderr: {result.stderr}"
+        
+        # Если вывод пустой, сообщаем об этом
+        if not result.stdout.strip():
+            return "Команда выполнена успешно, но не произвела вывода (stdout)."
+
+        return f"Результат выполнения:\n{result.stdout}"
+
+    except FileNotFoundError:
+        return f"Ошибка: команда '{command.split()[0]}' не найдена. Убедись, что она установлена и доступна в PATH."
+    except subprocess.TimeoutExpired:
+        return f"Ошибка: выполнение команды превысило тайм-аут в {timeout_seconds} секунд."
+    except Exception as e:
+        return f"Произошла непредвиденная ошибка: {str(e)}"
