@@ -1,8 +1,8 @@
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from prompts.main_system_prompt import prompt
-from models.google_models import gemini25_flash
-from models.ollama_models import qwen3_8b
+from models.google_models import gemini25_flash, gemini25_flash_lite
+from models.ollama_models import qwen3_8b, deepseekr1_8b, cogito_8b, gemma3_4b
 from tools.pc_control_tools import *
 
 
@@ -10,12 +10,12 @@ tools = [get_installed_software, start_application, get_open_windows, scrape_app
 
 
 agent = create_react_agent(
-    model=gemini25_flash,
+    model=gemma3_4b,
     tools=tools
 )
 
 
-input_data = {"messages": [SystemMessage(prompt), HumanMessage("Создай папку с именем 123 на рабочем столе ")]}
+input_data = {"messages": [SystemMessage(prompt), HumanMessage("Создай папку 123 в корне диска C: и открой её в проводнике.")]}
 
 
 
