@@ -1,1 +1,0 @@
-Model v0.3 turned out to be worse than v0.2, most likely due to a bad dataset
