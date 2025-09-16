@@ -10,3 +10,6 @@ valid.jsonl
 convert_to_yolo.py
 ui_detector/model/last.pt
 __pycache__
+yolov8m.pt
+yolo11n.pt
+.env
