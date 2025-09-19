@@ -12,12 +12,7 @@ from pywinauto.findwindows import ElementNotFoundError
 from playwright.sync_api import sync_playwright, Page
 
 
-@tool
-def get_installed_software():
-    """Возвращает отфильтрованный список названий установленных на компьютере программ.
-    Функция объединяет классические (Win32) и современные (UWP) приложения,
-    убирая из списка системные компоненты, драйверы и библиотеки, чтобы предоставить
-    только релевантные для пользователя программы. Не принимает аргументов."""
+def _get_installed_software():
     all_apps = set()
 
     command_classic = r'''
@@ -58,6 +53,46 @@ def get_installed_software():
     ]
     
     return filtered_list
+
+
+@tool
+def get_installed_software():
+    """Возвращает отфильтрованный список названий установленных на компьютере программ.
+    Функция объединяет классические (Win32) и современные (UWP) приложения,
+    убирая из списка системные компоненты, драйверы и библиотеки, чтобы предоставить
+    только релевантные для пользователя программы. Не принимает аргументов."""
+
+    return _get_installed_software()
+
+
+
+@tool
+def find_application_name(approximate_name: str) -> str:
+    """
+    Находит точное название установленного приложения по его примерному названию.
+    
+    Эта функция получает полный список установленных программ и ищет в нём первое
+    наиболее подходящее совпадение. Идеально подходит для получения корректного 
+    имени перед использованием инструмента `start_application`.
+
+    Args:
+        approximate_name (str): Приблизительное, неполное или нечувствительное 
+                                к регистру имя приложения для поиска (например, 
+                                "chrome", "photoshop").
+
+    Returns:
+        str: Полное, точное имя найденного приложения (например, "Google Chrome") 
+             или сообщение об ошибке, если ничего не найдено.
+    """
+    all_apps = _get_installed_software()
+    
+    search_term = approximate_name.lower()
+    
+    for app_name in all_apps:
+        if search_term in app_name.lower():
+            return app_name
+    
+    return f"Ошибка: Приложение '{approximate_name}' не найдено среди установленных программ."
 
 
 def _get_classic_app_paths():
@@ -223,23 +258,19 @@ def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
 @tool
 def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
     """
-    Возвращает список всех значимых UI-элементов приложения и их свойств.
+    Возвращает отфильтрованный и оптимизированный список интерактивных UI-элементов.
 
-    Эта функция сканирует окно приложения, находит все дочерние элементы
-    и извлекает их ключевые свойства. Она отфильтровывает неинформативные
-    элементы (например, панели-контейнеры без текста или названия), чтобы
-    предоставить чистый и полезный список для дальнейшей работы.
+    Эта функция сканирует окно приложения, извлекая свойства только тех элементов,
+    с которыми можно взаимодействовать. Она игнорирует фоновые панели и контейнеры.
+    Структура возвращаемых данных оптимизирована для экономии контекста LLM.
 
     Args:
         name (str): Часть заголовка окна приложения для поиска.
-                     Поиск не чувствителен к регистру и ищет частичное совпадение.
 
     Returns:
         Union[List[Dict[str, Any]], str]:
-            - Список словарей, где каждый словарь представляет один UI-элемент
-              и его свойства.
-            - Строка с сообщением об ошибке, если окно не найдено или
-              произошла другая проблема.
+            - Список словарей, где каждый словарь представляет интерактивный UI-элемент.
+            - Строка с сообщением об ошибке.
     """
     try:
         desktop = Desktop(backend="uia")
@@ -257,7 +288,9 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
         all_elements = main_win.descendants()
         element_details = []
 
-        insignificant_control_types = {'Pane', 'Group', 'Separator'}
+        non_interactive_types = {
+            'Pane', 'Group', 'Separator', 'ToolBar', 'ScrollBar', 'Image'
+        }
 
         for element in all_elements:
             try:
@@ -269,33 +302,30 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
                 name_prop = element_info.name
                 text_prop = element.window_text()
 
-                is_insignificant = (
-                    control_type in insignificant_control_types and
-                    not name_prop and
-                    not text_prop
-                )
-
-                if is_insignificant:
+                if control_type in non_interactive_types:
                     continue
 
+                if control_type == 'Custom' and not name_prop and not text_prop:
+                    continue
+
+                # --- ОПТИМИЗИРОВАННЫЙ СЛОВАРЬ DETAILS ---
                 details = {
                     "name": name_prop,
                     "text": text_prop,
                     "control_type": control_type,
                     "is_enabled": element.is_enabled(),
-                    "is_visible": element.is_visible(),
+                    # Поле 'is_visible' убрано, так как мы уже отфильтровали невидимые элементы.
                     "rectangle": {
                         "left": element.rectangle().left,
                         "top": element.rectangle().top,
                         "right": element.rectangle().right,
                         "bottom": element.rectangle().bottom,
-                        "width": element.rectangle().width(),
-                        "height": element.rectangle().height(),
+                        # Поля 'width' и 'height' убраны как избыточные.
                     }
                 }
                 element_details.append(details)
- 
-            except Exception: 
+
+            except Exception:
                 continue
 
         return element_details
@@ -306,6 +336,7 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
         return f"Произошла непредвиденная ошибка при работе с '{name}': {e}"
     
 
+@tool
 def interact_with_element_by_rect(
     name: str,
     rectangle: Dict[str, int],
@@ -319,9 +350,11 @@ def interact_with_element_by_rect(
     Args:
         name (str): Часть заголовка окна приложения для поиска.
         rectangle (Dict[str, int]): Словарь с координатами элемента.
-                                    Должен содержать ключи: 'left', 'top', 'right', 'bottom'.
+                                      Должен содержать ключи: 'left', 'top', 'right', 'bottom'.
         action (str): Действие для выполнения. Поддерживаемые действия:
-                      'click', 'double_click', 'right_click', 'set_text', 'get_text'.
+                      'click', 'double_click', 'right_click', 'set_text', 'get_text', 'press_enter',
+                      'scroll_up', 'scroll_down', 'scroll_left', 'scroll_right',
+                      'zoom_in', 'zoom_out'.
         text_to_set (Optional[str]): Текст для ввода (обязателен для действия 'set_text').
 
     Returns:
@@ -360,7 +393,9 @@ def interact_with_element_by_rect(
                 continue
 
         if not target_element:
-            return f"Ошибка: Элемент с координатами {rectangle} не найден."
+            # Для зума не требуется конкретный элемент, достаточно окна
+            if 'zoom' not in action:
+                 return f"Ошибка: Элемент с координатами {rectangle} не найден."
 
         action = action.lower()
         if action == 'click':
@@ -370,20 +405,39 @@ def interact_with_element_by_rect(
         elif action == 'right_click':
             target_element.right_click_input()
         
-        # --- ИЗМЕНЕННЫЙ БЛОК ---
         elif action == 'set_text':
             if text_to_set is None:
                 return "Ошибка: для действия 'set_text' необходимо передать аргумент 'text_to_set'."
             
-            # 1. Сначала кликаем на элемент, чтобы гарантированно установить фокус
             target_element.click_input()
-            
-            # 2. Затем печатаем текст, как это делал бы пользователь
             target_element.type_keys(text_to_set, with_spaces=True)
-        # --- КОНЕЦ ИЗМЕНЕННОГО БЛОКА ---
+            
+        elif action == 'press_enter':
+            target_element.type_keys('{ENTER}')
             
         elif action == 'get_text':
             return target_element.window_text()
+
+        # --- НОВЫЙ БЛОК ДЛЯ СКРОЛЛА ---
+        elif action == 'scroll_up':
+            target_element.scroll("up", "page")
+        elif action == 'scroll_down':
+            target_element.scroll("down", "page")
+        elif action == 'scroll_left':
+            target_element.scroll("left", "page")
+        elif action == 'scroll_right':
+            target_element.scroll("right", "page")
+        # --- КОНЕЦ БЛОКА ДЛЯ СКРОЛЛА ---
+
+        # --- НОВЫЙ БЛОК ДЛЯ ЗУМА ---
+        elif action == 'zoom_in':
+            # Для зума используется комбинация клавиш на всем окне
+            main_win.type_keys('^{PLUS}') # Ctrl + "+"
+        elif action == 'zoom_out':
+            # Для анзума (уменьшения)
+            main_win.type_keys('^{MINUS}') # Ctrl + "-"
+        # --- КОНЕЦ БЛОКА ДЛЯ ЗУМА ---
+            
         else:
             return f"Ошибка: Неизвестное действие '{action}'."
 
@@ -392,7 +446,6 @@ def interact_with_element_by_rect(
     except ElementNotFoundError:
         return f"Ошибка: Окно с именем '{name}' не найдено."
     except Exception as e:
-        # Теперь выводим более детальную информацию об ошибке
         return f"Произошла непредвиденная ошибка: {type(e).__name__}: {e}"
     
 
