@@ -1,13 +1,12 @@
-from langgraph.prebuilt import create_react_agent
+
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
 from prompts.main_system_prompt import prompt
-from models.google_models import gemini25_flash, gemini25_flash_lite
-from models.ollama_models import qwen3_8b, deepseekr1_8b
-from typing import TypedDict, Sequence, Annotated
+from models.google_models import gemini25_flash, gemini25_flash_lite, gemini20_flash, gemini20_flash_lite
+from typing import TypedDict, Annotated
 import operator
 from tools.pc_control_tools import *
+from tools.web_tools import search_and_scrape
 
 
 tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command]
@@ -16,30 +15,28 @@ model_with_tools = gemini25_flash.bind_tools(tools)
 
 
 class AgentState(TypedDict):
-    messages: Annotated[list[BaseMessage], operator.add]
-    ids_to_hide: Annotated[list[str], operator.add] 
+    messages: list[BaseMessage]
+    ids_to_hide: Annotated[list[str], operator.add]
 
-
+ 
 def agent_node(state):
     response = model_with_tools.invoke(state["messages"])
-    return {"messages": [response]}
+    return {"messages": state["messages"] + [response]}
 
 
 def tool_node(state: AgentState) -> dict:
     ids_to_hide = state.get("ids_to_hide", [])
-    if ids_to_hide:
-        updated_messages = []
-        for msg in state["messages"]:
-            if isinstance(msg, ToolMessage) and msg.tool_call_id in ids_to_hide:
-                updated_messages.append(
-                    ToolMessage(
-                        content="Результат выполнения scrape_application скрыт для экономии контекста.",
-                        tool_call_id=msg.tool_call_id,
-                    )
+    cleaned_messages = []
+    for msg in state["messages"]:
+        if isinstance(msg, ToolMessage) and msg.tool_call_id in ids_to_hide:
+            cleaned_messages.append(
+                ToolMessage(
+                    content="Результат выполнения scrape_application скрыт для экономии контекста.",
+                    tool_call_id=msg.tool_call_id,
                 )
-            else:
-                updated_messages.append(msg)
-        state["messages"] = updated_messages
+            )
+        else:
+            cleaned_messages.append(msg)
 
     new_tool_results = []
     new_ids_to_hide = []
@@ -56,19 +53,20 @@ def tool_node(state: AgentState) -> dict:
         if tool_call["name"] == "scrape_application":
             new_ids_to_hide.append(tool_call["id"])
             
-    return {"messages": new_tool_results, "ids_to_hide": new_ids_to_hide}
+    final_messages = cleaned_messages + new_tool_results
+    
+    return {"messages": final_messages, "ids_to_hide": new_ids_to_hide}
 
 
 def should_continue(state):
     last_message = state["messages"][-1]
-    if last_message.tool_calls:
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "continue"
     else:
         return "end"
 
 
 workflow = StateGraph(AgentState)
-
 
 workflow.add_node("agent", agent_node)
 workflow.add_node("action", tool_node)
@@ -89,10 +87,12 @@ workflow.add_edge("action", "agent")
 graph = workflow.compile()
 
 
-input_data = {"messages": [SystemMessage(prompt), HumanMessage("Открой мне Firefox и посмотри его содержимое, затем перейди на новую страницу и посмотри её содержимое")]}
+input_data = {"messages": [SystemMessage(prompt), HumanMessage("Открой диск C в проводнике")]}
 
 config = {"recursion_limit": 50}
 
-for chunk in graph.stream(input_data, stream_mode="values", config=config):
-    print(chunk, end="", flush=True)
-    
+#for chunk in graph.stream(input_data, stream_mode="values", config=config):
+#    print(chunk, end="", flush=True)
+
+def request_to_agent(req: str):
+    return graph.invoke(input_data)["messages"][-1]

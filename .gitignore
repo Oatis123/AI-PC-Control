@@ -13,3 +13,4 @@ __pycache__
 yolov8m.pt
 yolo11n.pt
 .env
+vosk-model-small-ru-0.22

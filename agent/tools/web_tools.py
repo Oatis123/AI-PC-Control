@@ -4,6 +4,7 @@ from markdownify import markdownify as md
 import requests
 from bs4 import BeautifulSoup
 
+
 def scrape_webpage(url: str) -> str:
     """
     Вспомогательная функция для загрузки и преобразования одной веб-страницы.
@@ -47,6 +48,7 @@ def scrape_webpage(url: str) -> str:
 
     except requests.RequestException as e:
         return f"Ошибка при загрузке страницы {url}: {e}"
+
 
 @tool
 def search_and_scrape(query: str, num_results: int = 3) -> str:
