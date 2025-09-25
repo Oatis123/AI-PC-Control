@@ -1,17 +1,18 @@
 
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langgraph.graph import StateGraph, END
-from prompts.main_system_prompt import prompt
-from models.google_models import gemini25_flash, gemini25_flash_lite, gemini20_flash, gemini20_flash_lite
+from agent.prompts.main_system_prompt import prompt
+from agent.models.google_models import gemini25_flash, gemini25_flash_lite, gemini20_flash, gemini20_flash_lite
+from agent.models.ollama_models import qwen3_8b, gemma3_12b
 from typing import TypedDict, Annotated
 import operator
-from tools.pc_control_tools import *
-from tools.web_tools import search_and_scrape
+from agent.tools.pc_control_tools import *
+from agent.tools.web_tools import search_and_scrape
 
 
 tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command]
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = gemini25_flash.bind_tools(tools)
+model_with_tools = gemini20_flash.bind_tools(tools)
 
 
 class AgentState(TypedDict):
@@ -86,13 +87,13 @@ workflow.add_edge("action", "agent")
 
 graph = workflow.compile()
 
-
-input_data = {"messages": [SystemMessage(prompt), HumanMessage("Открой диск C в проводнике")]}
-
 config = {"recursion_limit": 50}
 
 #for chunk in graph.stream(input_data, stream_mode="values", config=config):
 #    print(chunk, end="", flush=True)
 
 def request_to_agent(req: str):
-    return graph.invoke(input_data)["messages"][-1]
+    input_data = {"messages": [SystemMessage(prompt)]}
+    input_data["messages"].append(HumanMessage(req))
+    result = graph.invoke(input_data, config={"recursion_limit": 100})
+    return result["messages"][-1].content
