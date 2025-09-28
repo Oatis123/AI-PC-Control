@@ -100,14 +100,11 @@ config = {"recursion_limit": 50}
 #for chunk in graph.stream(input_data, stream_mode="values", config=config):
 #    print(chunk, end="", flush=True)
 
-def request_to_agent(req: str):
-    input_data = {"messages": [SystemMessage(prompt)]}
-    input_data["messages"].append(HumanMessage(req))
+def request_to_agent(req: List):
+    input_data = {"messages": [SystemMessage(prompt)] + req}
     result = graph.invoke(input_data, config={"recursion_limit": 100})
     #for i in graph.stream(input_data, config={"recursion_limit": 100}):
     #    print(i)
-    answer = result["messages"][-1].content
-    if isinstance(answer, List):
-        return "".join(answer)
-    else:
-        return answer
+    answer = result["messages"]
+    
+    return answer
