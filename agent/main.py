@@ -8,11 +8,12 @@ from typing import TypedDict, Annotated
 import operator
 from agent.tools.pc_control_tools import *
 from agent.tools.web_tools import search_and_scrape
+from agent.tools.useful_tools import waiting
 
 
-tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command]
+tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command, waiting]
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = gemini20_flash.bind_tools(tools)
+model_with_tools = gemini25_flash.bind_tools(tools)
 
 
 class AgentState(TypedDict):
@@ -26,37 +27,44 @@ def agent_node(state):
 
 
 def tool_node(state: AgentState) -> dict:
-    ids_to_hide = state.get("ids_to_hide", [])
-    cleaned_messages = []
-    for msg in state["messages"]:
-        if isinstance(msg, ToolMessage) and msg.tool_call_id in ids_to_hide:
-            cleaned_messages.append(
-                ToolMessage(
-                    content="Результат выполнения scrape_application скрыт для экономии контекста.",
-                    tool_call_id=msg.tool_call_id,
-                )
-            )
-        else:
-            cleaned_messages.append(msg)
-
-    new_tool_results = []
-    new_ids_to_hide = []
-    
+    previous_scrape_ids = state.get("ids_to_hide", [])
     last_message = state["messages"][-1]
 
+    is_scraping_again = any(
+        tc["name"] == "scrape_application" for tc in last_message.tool_calls
+    )
+
+    cleaned_messages = []
+    if is_scraping_again:
+        for msg in state["messages"]:
+            if isinstance(msg, ToolMessage) and msg.tool_call_id in previous_scrape_ids:
+                cleaned_messages.append(
+                    ToolMessage(
+                        content="Результат выполнения scrape_application скрыт для экономии контекста.",
+                        tool_call_id=msg.tool_call_id,
+                    )
+                )
+            else:
+                cleaned_messages.append(msg)
+    else:
+        cleaned_messages = state["messages"]
+
+    new_tool_results = []
+    current_scrape_ids = []
     for tool_call in last_message.tool_calls:
         tool = tools_by_name[tool_call["name"]]
         observation = tool.invoke(tool_call["args"])
         new_tool_results.append(
             ToolMessage(content=str(observation), tool_call_id=tool_call["id"])
         )
-
         if tool_call["name"] == "scrape_application":
-            new_ids_to_hide.append(tool_call["id"])
-            
+            current_scrape_ids.append(tool_call["id"])
+
     final_messages = cleaned_messages + new_tool_results
     
-    return {"messages": final_messages, "ids_to_hide": new_ids_to_hide}
+    next_ids_to_hide = current_scrape_ids if is_scraping_again else previous_scrape_ids
+    
+    return {"messages": final_messages, "ids_to_hide": next_ids_to_hide}
 
 
 def should_continue(state):
@@ -96,4 +104,10 @@ def request_to_agent(req: str):
     input_data = {"messages": [SystemMessage(prompt)]}
     input_data["messages"].append(HumanMessage(req))
     result = graph.invoke(input_data, config={"recursion_limit": 100})
-    return result["messages"][-1].content
+    #for i in graph.stream(input_data, config={"recursion_limit": 100}):
+    #    print(i)
+    answer = result["messages"][-1].content
+    if isinstance(answer, List):
+        return "".join(answer)
+    else:
+        return answer

@@ -10,6 +10,7 @@ from pywinauto import Desktop
 from pywinauto.application import Application
 from pywinauto.findwindows import ElementNotFoundError
 from playwright.sync_api import sync_playwright, Page
+from comtypes.gen.UIAutomationClient import UIA_TogglePatternId, UIA_SelectionItemPatternId, ToggleState_Off, ToggleState_On, ToggleState_Indeterminate
 
 
 def _get_installed_software():
@@ -258,7 +259,8 @@ def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
 @tool
 def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
     """
-    Возвращает отфильтрованный и оптимизированный список интерактивных UI-элементов.
+    Возвращает отфильтрованный и оптимизированный список интерактивных UI-элементов,
+    включая их состояние (включен/выбран).
 
     Эта функция сканирует окно приложения, извлекая свойства только тех элементов,
     с которыми можно взаимодействовать. Она игнорирует фоновые панели и контейнеры.
@@ -292,6 +294,13 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
             'Pane', 'Group', 'Separator', 'ToolBar', 'ScrollBar', 'Image'
         }
 
+        # Словарь для более понятного представления состояний
+        toggle_state_map = {
+            ToggleState_Off: 'Off',
+            ToggleState_On: 'On',
+            ToggleState_Indeterminate: 'Indeterminate'
+        }
+
         for element in all_elements:
             try:
                 if not element.is_visible():
@@ -314,20 +323,30 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
                     "text": text_prop,
                     "control_type": control_type,
                     "is_enabled": element.is_enabled(),
-                    # Поле 'is_visible' убрано, так как мы уже отфильтровали невидимые элементы.
                     "rectangle": {
                         "left": element.rectangle().left,
                         "top": element.rectangle().top,
                         "right": element.rectangle().right,
                         "bottom": element.rectangle().bottom,
-                        # Поля 'width' и 'height' убраны как избыточные.
                     }
                 }
+
+                ## 1. Проверяем состояние для чекбоксов и переключателей
+                #if element.is_pattern_supported(UIA_TogglePatternId):
+                #    toggle_pattern = element.get_pattern(UIA_TogglePatternId)
+                #    state = toggle_pattern.CurrentToggleState
+                #    details["toggle_state"] = toggle_state_map.get(state, "Unknown")
+
+                ## 2. Проверяем состояние для радиокнопок и элементов списка
+                #if element.is_pattern_supported(UIA_SelectionItemPatternId):
+                #    selection_pattern = element.get_pattern(UIA_SelectionItemPatternId)
+                #    details["is_selected"] = selection_pattern.CurrentIsSelected
+
                 element_details.append(details)
 
-            except Exception:
+            except Exception as e:
+                print(f"Скрытая ошибка при обработке элемента: {e}") # Добавить для отладки
                 continue
-
         return element_details
 
     except ElementNotFoundError:
@@ -418,7 +437,6 @@ def interact_with_element_by_rect(
         elif action == 'get_text':
             return target_element.window_text()
 
-        # --- НОВЫЙ БЛОК ДЛЯ СКРОЛЛА ---
         elif action == 'scroll_up':
             target_element.scroll("up", "page")
         elif action == 'scroll_down':
@@ -427,16 +445,13 @@ def interact_with_element_by_rect(
             target_element.scroll("left", "page")
         elif action == 'scroll_right':
             target_element.scroll("right", "page")
-        # --- КОНЕЦ БЛОКА ДЛЯ СКРОЛЛА ---
 
-        # --- НОВЫЙ БЛОК ДЛЯ ЗУМА ---
         elif action == 'zoom_in':
             # Для зума используется комбинация клавиш на всем окне
             main_win.type_keys('^{PLUS}') # Ctrl + "+"
         elif action == 'zoom_out':
             # Для анзума (уменьшения)
             main_win.type_keys('^{MINUS}') # Ctrl + "-"
-        # --- КОНЕЦ БЛОКА ДЛЯ ЗУМА ---
             
         else:
             return f"Ошибка: Неизвестное действие '{action}'."
