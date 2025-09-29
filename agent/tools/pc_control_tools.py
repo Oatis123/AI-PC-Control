@@ -58,32 +58,17 @@ def _get_installed_software():
 
 @tool
 def get_installed_software():
-    """Возвращает отфильтрованный список названий установленных на компьютере программ.
-    Функция объединяет классические (Win32) и современные (UWP) приложения,
-    убирая из списка системные компоненты, драйверы и библиотеки, чтобы предоставить
-    только релевантные для пользователя программы. Не принимает аргументов."""
-
+    """Возвращает отфильтрованный список установленных программ, исключая системные компоненты. Не принимает аргументов."""
     return _get_installed_software()
-
 
 
 @tool
 def find_application_name(approximate_name: str) -> str:
     """
     Находит точное название установленного приложения по его примерному названию.
-    
-    Эта функция получает полный список установленных программ и ищет в нём первое
-    наиболее подходящее совпадение. Идеально подходит для получения корректного 
-    имени перед использованием инструмента `start_application`.
 
     Args:
-        approximate_name (str): Приблизительное, неполное или нечувствительное 
-                                к регистру имя приложения для поиска (например, 
-                                "chrome", "photoshop").
-
-    Returns:
-        str: Полное, точное имя найденного приложения (например, "Google Chrome") 
-             или сообщение об ошибке, если ничего не найдено.
+        approximate_name (str): Приблизительное имя приложения для поиска (например, "chrome").
     """
     all_apps = _get_installed_software()
     
@@ -176,17 +161,13 @@ def _start_application_by_name(app_name: str) -> bool:
 
 @tool
 def start_application(app_name: str)->bool:
-    """Запускает приложение на компьютере по его названию.
-    В качестве `app_name` следует передавать одно из названий, полученных от инструмента
-    `get_installed_software`. Инструмент использует несколько методов для поиска
-    и запуска программы. Возвращает True в случае успеха и False в случае неудачи."""
-        
+    """Запускает приложение по его точному названию. Используйте `find_application_name`, чтобы найти его. Возвращает True при успехе."""
     return _start_application_by_name(app_name=app_name)
 
 
 @tool
 def get_open_windows():
-    """Возвращает список всех открытых сейчас приложений."""
+    """Возвращает список заголовков всех открытых окон."""
     desktop = Desktop(backend="uia")
     windows = desktop.windows()
     window_titles = [win.window_text() for win in windows if win.window_text()]
@@ -233,59 +214,26 @@ def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
         pass
 
 
-#def _scrape_playwright_page(page: Page) -> List[Dict[str, Any]]:
-#    ui_elements = []
-#    all_locators = page.locator('*')
-#    
-#    for i in range(all_locators.count()):
-#        try:
-#            element = all_locators.nth(i)
-#            element_info = {
-#                "tag_name": element.evaluate('node => node.tagName.toLowerCase()'),
-#                "id": element.get_attribute('id'),
-#                "class": element.get_attribute('class'),
-#                "text_content": element.text_content(timeout=500),
-#                "bounding_box": element.bounding_box(),
-#                "is_visible": element.is_visible(),
-#                "is_enabled": element.is_enabled()
-#            }
-#            ui_elements.append(element_info)
-#        except Exception:
-#            pass
-#            
-#    return ui_elements
-
-
 @tool
 def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
     """
-    Возвращает отфильтрованный и оптимизированный список интерактивных UI-элементов,
-    включая их состояние (включен/выбран).
-
-    Эта функция сканирует окно приложения, извлекая свойства только тех элементов,
-    с которыми можно взаимодействовать. Она игнорирует фоновые панели и контейнеры.
-    Структура возвращаемых данных оптимизирована для экономии контекста LLM.
+    Сканирует окно приложения и возвращает список интерактивных UI-элементов с их свойствами для взаимодействия.
 
     Args:
-        name (str): Часть заголовка окна приложения для поиска.
-
-    Returns:
-        Union[List[Dict[str, Any]], str]:
-            - Список словарей, где каждый словарь представляет интерактивный UI-элемент.
-            - Строка с сообщением об ошибке.
+        name (str): Часть заголовка окна для сканирования.
     """
     try:
         desktop = Desktop(backend="uia")
         main_win_spec = desktop.window(title_re=f".*{name}.*", found_index=0)
 
-        if not main_win_spec.exists(timeout=20):
+        if not main_win_spec.exists(timeout=5):
             return f"Ошибка: Окно с именем, содержащим '{name}', не найдено."
 
         main_win = main_win_spec.wrapper_object()
 
         if not main_win.is_active():
             main_win.set_focus()
-            main_win_spec.wait('active', timeout=20)
+            main_win_spec.wait('active', timeout=5)
 
         all_elements = main_win.descendants()
         element_details = []
@@ -294,7 +242,6 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
             'Pane', 'Group', 'Separator', 'ToolBar', 'ScrollBar', 'Image'
         }
 
-        # Словарь для более понятного представления состояний
         toggle_state_map = {
             ToggleState_Off: 'Off',
             ToggleState_On: 'On',
@@ -317,7 +264,6 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
                 if control_type == 'Custom' and not name_prop and not text_prop:
                     continue
 
-                # --- ОПТИМИЗИРОВАННЫЙ СЛОВАРЬ DETAILS ---
                 details = {
                     "name": name_prop,
                     "text": text_prop,
@@ -331,21 +277,10 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
                     }
                 }
 
-                ## 1. Проверяем состояние для чекбоксов и переключателей
-                #if element.is_pattern_supported(UIA_TogglePatternId):
-                #    toggle_pattern = element.get_pattern(UIA_TogglePatternId)
-                #    state = toggle_pattern.CurrentToggleState
-                #    details["toggle_state"] = toggle_state_map.get(state, "Unknown")
-
-                ## 2. Проверяем состояние для радиокнопок и элементов списка
-                #if element.is_pattern_supported(UIA_SelectionItemPatternId):
-                #    selection_pattern = element.get_pattern(UIA_SelectionItemPatternId)
-                #    details["is_selected"] = selection_pattern.CurrentIsSelected
-
                 element_details.append(details)
 
             except Exception as e:
-                print(f"Скрытая ошибка при обработке элемента: {e}") # Добавить для отладки
+                print(f"Скрытая ошибка при обработке элемента: {e}")
                 continue
         return element_details
 
@@ -363,36 +298,37 @@ def interact_with_element_by_rect(
     text_to_set: Optional[str] = None
 ) -> Union[str, Any]:
     """
-    Находит UI-элемент по его координатам (rectangle) и выполняет над ним действие.
-    Перед взаимодействием активирует окно, если оно неактивно.
+    Находит UI-элемент по его точным координатам в указанном окне и выполняет над ним определённое действие.
 
     Args:
-        name (str): Часть заголовка окна приложения для поиска.
-        rectangle (Dict[str, int]): Словарь с координатами элемента.
-                                      Должен содержать ключи: 'left', 'top', 'right', 'bottom'.
-        action (str): Действие для выполнения. Поддерживаемые действия:
-                      'click', 'double_click', 'right_click', 'set_text', 'get_text', 'press_enter',
-                      'scroll_up', 'scroll_down', 'scroll_left', 'scroll_right',
-                      'zoom_in', 'zoom_out'.
-        text_to_set (Optional[str]): Текст для ввода (обязателен для действия 'set_text').
+        name (str): Часть заголовка окна приложения для поиска. Например, 'Mozilla Firefox' или 'Калькулятор'.
+        rectangle (Dict[str, int]): Словарь с точными координатами элемента, полученный от `scrape_application`. 
+                                   Должен содержать целочисленные ключи: 'left', 'top', 'right', 'bottom'.
+        action (str): Действие, которое необходимо выполнить над элементом. Поддерживаемые действия:
+                      - Клики: 'click', 'double_click', 'right_click'.
+                      - Работа с текстом: 'set_text', 'get_text', 'press_enter'.
+                      - Прокрутка: 'scroll_up', 'scroll_down', 'scroll_left', 'scroll_right'.
+                      - Масштабирование (применяется ко всему окну): 'zoom_in', 'zoom_out'.
+        text_to_set (Optional[str]): Текстовая строка для ввода. Является обязательным аргументом только для действия 'set_text'.
 
     Returns:
         Union[str, Any]:
-            - Строка с сообщением об успехе или ошибке.
-            - Результат действия (например, текст элемента для 'get_text').
+            - В случае успеха для большинства действий — строка с сообщением об успехе (например, "Действие 'click' успешно выполнено.").
+            - Для действия 'get_text' — текст, содержащийся в элементе.
+            - В случае ошибки — строка с описанием ошибки (например, "Ошибка: Элемент с координатами ... не найден.").
     """
     try:
         desktop = Desktop(backend="uia")
         main_win_spec = desktop.window(title_re=f".*{name}.*", found_index=0)
 
-        if not main_win_spec.exists(timeout=20):
+        if not main_win_spec.exists(timeout=5):
             return f"Ошибка: Окно с именем '{name}' не найдено."
 
         main_win = main_win_spec.wrapper_object()
         
         if not main_win.is_active():
             main_win.set_focus()
-            main_win_spec.wait('active', timeout=20)
+            main_win_spec.wait('active', timeout=5)
 
         target_element = None
         for element in main_win.descendants():
@@ -412,9 +348,8 @@ def interact_with_element_by_rect(
                 continue
 
         if not target_element:
-            # Для зума не требуется конкретный элемент, достаточно окна
             if 'zoom' not in action:
-                 return f"Ошибка: Элемент с координатами {rectangle} не найден."
+                   return f"Ошибка: Элемент с координатами {rectangle} не найден."
 
         action = action.lower()
         if action == 'click':
@@ -447,11 +382,9 @@ def interact_with_element_by_rect(
             target_element.scroll("right", "page")
 
         elif action == 'zoom_in':
-            # Для зума используется комбинация клавиш на всем окне
-            main_win.type_keys('^{PLUS}') # Ctrl + "+"
+            main_win.type_keys('^{PLUS}')
         elif action == 'zoom_out':
-            # Для анзума (уменьшения)
-            main_win.type_keys('^{MINUS}') # Ctrl + "-"
+            main_win.type_keys('^{MINUS}')
             
         else:
             return f"Ошибка: Неизвестное действие '{action}'."
@@ -466,36 +399,28 @@ def interact_with_element_by_rect(
 
 @tool
 def execute_bash_command(command: str) -> str:
-    """Выполняет команду в терминале операционной системы.
-
-    Используй для взаимодействия с файловой системой, выполнения скриптов и получения системной информации.
-    Всегда генерируй команды, соответствующие операционной системе, которая указана в системном промпте.
-    Примеры: 'dir' для Windows, 'ls -la' для Linux.
-    ЗАПРЕЩЕНО: Использование разрушительных или необратимых команд (например, 'del', 'rm', 'format').
+    """
+    Выполняет команду в терминале (shell) и возвращает ее вывод. Запрещены разрушительные команды (rm, del).
 
     Args:
-        command (str): Текстовая строка с командой для выполнения.
+        command (str): Команда для выполнения.
     """
-    # Устанавливаем тайм-аут для предотвращения "зависших" процессов
-    timeout_seconds = 15
+    timeout_seconds = 10
     
     try:
-        # Выполняем команду
         result = subprocess.run(
             command, 
-            shell=True,          # Позволяет выполнять сложные команды, но требует осторожности
-            capture_output=True, # Захватывает stdout и stderr
-            text=True,           # Возвращает вывод в виде текста (str)
+            shell=True,
+            capture_output=True,
+            text=True,
             timeout=timeout_seconds,
             encoding="utf-8",
             errors="replace"
         )
 
-        # Проверяем, была ли ошибка при выполнении
         if result.returncode != 0:
             return f"Ошибка выполнения команды:\nСтатус код: {result.returncode}\nStderr: {result.stderr}"
         
-        # Если вывод пустой, сообщаем об этом
         if not result.stdout.strip():
             return "Команда выполнена успешно, но не произвела вывода (stdout)."
 

@@ -2,18 +2,31 @@
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from agent.prompts.main_system_prompt import prompt
-from agent.models.google_models import gemini25_flash, gemini25_flash_lite, gemini20_flash, gemini20_flash_lite
-from agent.models.ollama_models import qwen3_8b, gemma3_12b
+from agent.models.polza_ai_models import *
 from typing import TypedDict, Annotated
 import operator
+import logging
+from typing import List
 from agent.tools.pc_control_tools import *
 from agent.tools.web_tools import search_and_scrape
 from agent.tools.useful_tools import waiting
+import langchain
+
+langchain.debug = True
 
 
 tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command, waiting]
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = gemini25_flash.bind_tools(tools)
+model_with_tools = gpt_oss_120b.bind_tools(tools)
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    filename='agent_logs.txt',
+    filemode='a',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
+)
 
 
 class AgentState(TypedDict):
@@ -27,20 +40,22 @@ def agent_node(state):
 
 
 def tool_node(state: AgentState) -> dict:
-    previous_scrape_ids = state.get("ids_to_hide", [])
+    tools_to_hide = ["scrape_application", "get_installed_software"]
+    
+    previous_ids_to_hide = state.get("ids_to_hide", [])
     last_message = state["messages"][-1]
 
-    is_scraping_again = any(
-        tc["name"] == "scrape_application" for tc in last_message.tool_calls
+    is_tool_called_again = any(
+        tc["name"] in tools_to_hide for tc in last_message.tool_calls
     )
 
     cleaned_messages = []
-    if is_scraping_again:
+    if is_tool_called_again:
         for msg in state["messages"]:
-            if isinstance(msg, ToolMessage) and msg.tool_call_id in previous_scrape_ids:
+            if isinstance(msg, ToolMessage) and msg.tool_call_id in previous_ids_to_hide:
                 cleaned_messages.append(
                     ToolMessage(
-                        content="Результат выполнения scrape_application скрыт для экономии контекста.",
+                        content="Результат выполнения предыдущего инструмента скрыт для экономии контекста.",
                         tool_call_id=msg.tool_call_id,
                     )
                 )
@@ -50,19 +65,19 @@ def tool_node(state: AgentState) -> dict:
         cleaned_messages = state["messages"]
 
     new_tool_results = []
-    current_scrape_ids = []
+    current_ids_to_hide = []
     for tool_call in last_message.tool_calls:
         tool = tools_by_name[tool_call["name"]]
         observation = tool.invoke(tool_call["args"])
         new_tool_results.append(
             ToolMessage(content=str(observation), tool_call_id=tool_call["id"])
         )
-        if tool_call["name"] == "scrape_application":
-            current_scrape_ids.append(tool_call["id"])
+        if tool_call["name"] in tools_to_hide:
+            current_ids_to_hide.append(tool_call["id"])
 
     final_messages = cleaned_messages + new_tool_results
     
-    next_ids_to_hide = current_scrape_ids if is_scraping_again else previous_scrape_ids
+    next_ids_to_hide = current_ids_to_hide if is_tool_called_again else previous_ids_to_hide
     
     return {"messages": final_messages, "ids_to_hide": next_ids_to_hide}
 
@@ -101,10 +116,22 @@ config = {"recursion_limit": 50}
 #    print(chunk, end="", flush=True)
 
 def request_to_agent(req: List):
-    input_data = {"messages": [SystemMessage(prompt)] + req}
-    result = graph.invoke(input_data, config={"recursion_limit": 100})
-    #for i in graph.stream(input_data, config={"recursion_limit": 100}):
-    #    print(i)
-    answer = result["messages"]
+    logging.info(f"Получен новый запрос: {req}")
     
-    return answer
+    try:
+        input_data = {"messages": [SystemMessage(prompt)] + req}
+        logging.info("Данные для графа подготовлены.")
+        
+        logging.info("Вызов графа...")
+        result = graph.invoke(input_data, config={"recursion_limit": 100})
+        logging.info(f"Граф успешно отработал. Получен результат.")
+
+        answer = result["messages"]
+        logging.info("Ответ успешно извлечен из результата.")
+        logging.info(answer)
+        
+        return answer
+
+    except Exception as e:
+        logging.error(f"Произошла ошибка при обработке запроса: {req}", exc_info=True)
+        raise e

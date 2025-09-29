@@ -12,5 +12,3 @@ gemini25_flash_lite = ChatGoogleGenerativeAI(api_key=GEMINI_API_KEY, model="gemi
 
 gemini20_flash = ChatGoogleGenerativeAI(api_key=GEMINI_API_KEY, model="gemini-2.0-flash")
 gemini20_flash_lite = ChatGoogleGenerativeAI(api_key=GEMINI_API_KEY, model="gemini-2.0-flash-lite")
-
-gemma3_27b = ChatGoogleGenerativeAI(api_key=GEMINI_API_KEY, model="gemma-3-27b-it")

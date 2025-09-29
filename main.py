@@ -15,7 +15,7 @@ from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from agent.main import request_to_agent
 
 
@@ -23,7 +23,7 @@ WAKE_WORD = "джарвис"
 MODEL_FOLDER_NAME = "vosk-model-small-ru-0.22"
 WHISPER_MODEL_SIZE = "small"
 TEMP_WAV_FILE = "temp_command.wav"
-WAITING_SOUND = "S:/GitHubProjects/AI-PC-Contol/4115442.mp3"
+WAITING_SOUND = "4115442.mp3"
 XTTS_SR = 24000
 
 chat_history = []
@@ -57,7 +57,7 @@ stream = pa.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, fra
 
 
 def listen_command_with_whisper(recognizer, microphone):
-    recognizer.pause_threshold = 2
+    recognizer.pause_threshold = 3
 
     with microphone as source:
         activate_sound.play()
