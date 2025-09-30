@@ -2,9 +2,6 @@ import vosk
 import pyaudio
 import json
 import os
-import speech_recognition as sr
-import whisper
-import wave
 import torch
 import pygame
 import threading
@@ -18,13 +15,14 @@ from TTS.config.shared_configs import BaseDatasetConfig
 from langchain_core.messages import HumanMessage
 from agent.main import request_to_agent
 
-
 WAKE_WORD = "джарвис"
 MODEL_FOLDER_NAME = "vosk-model-small-ru-0.22"
-WHISPER_MODEL_SIZE = "small"
-TEMP_WAV_FILE = "temp_command.wav"
 WAITING_SOUND = "4115442.mp3"
 XTTS_SR = 24000
+INPUT_SAMPLE_RATE = 16000
+INPUT_FRAMES_PER_BUFFER = 4096
+COMMAND_TIMEOUT_SECONDS = 10
+FOLLOW_UP_TIMEOUT_SECONDS = 8 # Время ожидания следующей команды
 
 chat_history = []
 
@@ -36,54 +34,27 @@ if not os.path.exists(MODEL_FOLDER_NAME):
     exit()
 
 vosk_model = vosk.Model(MODEL_FOLDER_NAME)
-vosk_recognizer = vosk.KaldiRecognizer(vosk_model, 16000)
+vosk_recognizer = vosk.KaldiRecognizer(vosk_model, INPUT_SAMPLE_RATE)
+vosk_recognizer.SetWords(True)
 
-print(f"Загрузка модели Whisper '{WHISPER_MODEL_SIZE}'...")
-
+print("Загрузка модели TTS...")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
-
 try:
-    whisper_model = whisper.load_model(WHISPER_MODEL_SIZE, device=device)
-    print(f"Модель Whisper успешно загружена на {device.upper()}.")
+    coqui_tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+    print(f"Модель TTS успешно загружена на {device.upper()}.")
 except Exception as e:
-    print(f"Ошибка при загрузке модели Whisper: {e}")
+    print(f"Ошибка при загрузке модели TTS: {e}")
     exit()
 
-coqui_tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-
 pa = pyaudio.PyAudio()
-stream = pa.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=8192)
-
-
-def listen_command_with_whisper(recognizer, microphone):
-    recognizer.pause_threshold = 3
-
-    with microphone as source:
-        activate_sound.play()
-        print("Говорите вашу команду...")
-        try:
-
-            audio = recognizer.listen(source, timeout=5, phrase_time_limit=20)
-
-            with open(TEMP_WAV_FILE, "wb") as f:
-                f.write(audio.get_wav_data())
-
-            print("Распознавание с помощью Whisper...")
-
-            result = whisper_model.transcribe(TEMP_WAV_FILE, language="ru", fp16=torch.cuda.is_available())
-            command = result.get("text", "")
-
-            os.remove(TEMP_WAV_FILE)
-
-            return command.strip()
-        
-        except sr.WaitTimeoutError:
-            return "не распознано (время вышло)"
-        except sr.UnknownValueError:
-            return "не распознано"
-        except Exception as e:
-            return f"произошла ошибка: {e}"
+stream = pa.open(
+    format=pyaudio.paInt16,
+    channels=1,
+    rate=INPUT_SAMPLE_RATE,
+    input=True,
+    frames_per_buffer=INPUT_FRAMES_PER_BUFFER
+)
 
 
 def sentence_chunks(text):
@@ -103,10 +74,10 @@ def speak_streaming(text, speaker_wav="test2.mp3", language="ru", speed=5.0, vol
         with torch.no_grad():
             for sent in sentence_chunks(text):
                 try:
-                    for wav in coqui_tts.tts_stream(text=sent, speaker_wav=speaker_wav, language=language, speed=speed):
-                        wav = np.asarray(wav, dtype=np.float32).flatten()
-                        wav = (wav * volume).clip(-1.0, 1.0)
-                        pcm16 = (wav * 32767.0).astype(np.int16).tobytes()
+                    for wav_chunk in coqui_tts.tts_stream(text=sent, speaker_wav=speaker_wav, language=language, speed=speed):
+                        wav_chunk = np.asarray(wav_chunk, dtype=np.float32).flatten()
+                        wav_chunk = (wav_chunk * volume).clip(-1.0, 1.0)
+                        pcm16 = (wav_chunk * 32767.0).astype(np.int16).tobytes()
                         q.put(pcm16)
                 except Exception:
                     wav = coqui_tts.tts(text=sent, speaker_wav=speaker_wav, language=language, speed=speed)
@@ -136,13 +107,28 @@ def speak_streaming(text, speaker_wav="test2.mp3", language="ru", speed=5.0, vol
     t_cons.join()
 
 
-stream.start_stream()
-print(f"\nСистема активирована. Ожидание кодового слова '{WAKE_WORD}'...")
+def listen_for_command_vosk(audio_stream, recognizer, timeout_seconds):
+    activate_sound.play()
+    print(f"Слушаю команду ({timeout_seconds} сек)...")
+    max_chunks = int((INPUT_SAMPLE_RATE / INPUT_FRAMES_PER_BUFFER) * timeout_seconds)
+    
+    for i in range(max_chunks):
+        data = audio_stream.read(INPUT_FRAMES_PER_BUFFER, exception_on_overflow=False)
+        if recognizer.AcceptWaveform(data):
+            result_json = recognizer.FinalResult()
+            result_dict = json.loads(result_json)
+            command = result_dict.get("text", "")
+            if command:
+                return command.strip()
+    
+    return "время вышло"
 
+stream.start_stream()
+print(f"\n✅ Система активирована. Ожидание кодового слова '{WAKE_WORD}'...")
 
 try:
     while True:
-        data = stream.read(4096, exception_on_overflow=False)
+        data = stream.read(INPUT_FRAMES_PER_BUFFER, exception_on_overflow=False)
 
         if vosk_recognizer.AcceptWaveform(data):
             result_json = vosk_recognizer.Result()
@@ -150,56 +136,52 @@ try:
             text = result_dict.get("text", "")
 
             if WAKE_WORD in text:
-                print(f"Кодовое слово '{WAKE_WORD}' обнаружено!")
-            
-                r = sr.Recognizer()
-                mic = sr.Microphone(sample_rate=16000)
+                print(f"▶️ Кодовое слово '{WAKE_WORD}' обнаружено!")
                 
-                with mic as source:
+                command = text.replace(WAKE_WORD, "").strip()
 
-                    print("Калибровка уровня шума...")
-                    r.adjust_for_ambient_noise(source, duration=0.5)
+                if not command:
+                    command = listen_for_command_vosk(stream, vosk_recognizer, COMMAND_TIMEOUT_SECONDS)
+                else:
+                    activate_sound.play()
 
-                while True:
+                # Начало цикла диалога
+                while command and "время вышло" not in command:
+                    print(f"Выполнение запроса: '{command}'")
 
-                    command = listen_command_with_whisper(r, mic)
-
-                    if command and "не распознано" not in command and "ошибка" not in command:
-
-
-                        print(f"Выполнение запроса: '{command}'")
-
-                        chat_history.append(HumanMessage(command))
-
-                        result = request_to_agent(chat_history)
-
-                        chat_history = result
-
-                        result = result[-1].content
-
-                        if result != "":
-                            speak_streaming(result, speaker_wav="test.wav", language="ru", speed=5.0, volume=0.5)
-                            
-                        print(f"Результат выполнения команды: {result}")
-                        print("Слушаю следующую команду...")
-
-                    elif "время вышло" in command:
-                        print("Время ожидания истекло.")
-                        break
+                    chat_history.append(HumanMessage(content=command))
+                    response_history = request_to_agent(chat_history)
+                    
+                    if response_history:
+                        chat_history = response_history
+                        response_text = response_history[-1].content
                     else:
-                        print(f"Команду не удалось распознать. ({command})")
-                        break
+                        response_text = "Произошла ошибка при обработке запроса."
 
-                print(f"\nСнова жду кодовое слово '{WAKE_WORD}'...")
+                    if response_text:
+                        print(f"Ответ агента: {response_text}")
+                        speak_streaming(response_text, speaker_wav="test.wav", language="ru", speed=5.0, volume=0.5)
+                    else:
+                        print("Агент вернул пустой ответ.")
+                    
+                    # Ожидание следующей команды
+                    command = listen_for_command_vosk(stream, vosk_recognizer, FOLLOW_UP_TIMEOUT_SECONDS)
+
+                # Если цикл завершился из-за тайм-аута или пустой команды
+                if "время вышло" in command:
+                    print("Время ожидания следующей команды истекло.")
+                else:
+                    print(f"Команду не удалось распознать. ({command})")
+
+                print(f"\n🔁 Снова жду кодовое слово '{WAKE_WORD}'...")
                 vosk_recognizer.Reset()
 
 except KeyboardInterrupt:
     print("\nПрограмма остановлена.")
 
 finally:
+    print("Завершение работы...")
     if stream.is_active():
         stream.stop_stream()
         stream.close()
     pa.terminate()
-    if os.path.exists(TEMP_WAV_FILE):
-        os.remove(TEMP_WAV_FILE)

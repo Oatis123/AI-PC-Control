@@ -215,12 +215,14 @@ def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
 
 
 @tool
-def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
+def scrape_application(name: str, control_types: Optional[List[str]] = None) -> Union[List[Dict[str, Any]], str]:
     """
-    Сканирует окно приложения и возвращает список интерактивных UI-элементов с их свойствами для взаимодействия.
+    Сканирует окно приложения и возвращает список интерактивных UI-элементов, опционально фильтруя их по типу.
 
     Args:
         name (str): Часть заголовка окна для сканирования.
+        control_types (Optional[List[str]], optional): Список типов контролов для фильтрации (например, ['Button', 'Edit']). 
+                                                     По умолчанию None (возвращаются все интерактивные типы).
     """
     try:
         desktop = Desktop(backend="uia")
@@ -242,12 +244,6 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
             'Pane', 'Group', 'Separator', 'ToolBar', 'ScrollBar', 'Image'
         }
 
-        toggle_state_map = {
-            ToggleState_Off: 'Off',
-            ToggleState_On: 'On',
-            ToggleState_Indeterminate: 'Indeterminate'
-        }
-
         for element in all_elements:
             try:
                 if not element.is_visible():
@@ -255,6 +251,11 @@ def scrape_application(name: str) -> Union[List[Dict[str, Any]], str]:
 
                 element_info = element.element_info
                 control_type = element_info.control_type
+
+                # Фильтрация по заданным типам контролов
+                if control_types and control_type not in control_types:
+                    continue
+
                 name_prop = element_info.name
                 text_prop = element.window_text()
 
