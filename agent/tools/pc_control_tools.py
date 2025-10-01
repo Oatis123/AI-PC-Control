@@ -217,11 +217,12 @@ def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
 @tool
 def scrape_application(name: str, control_types: Optional[List[str]] = None) -> Union[List[Dict[str, Any]], str]:
     """
-    Сканирует окно приложения и возвращает список интерактивных UI-элементов, опционально фильтруя их по типу.
+    Сканирует окно приложения и возвращает список ТОЛЬКО ВИДИМЫХ интерактивных UI-элементов,
+    опционально фильтруя их по типу. В отчет по элементам не добавляется критерий видимости.
 
     Args:
         name (str): Часть заголовка окна для сканирования.
-        control_types (Optional[List[str]], optional): Список типов контролов для фильтрации (например, ['Button', 'Edit']). 
+        control_types (Optional[List[str]], optional): Список типов контролов для фильтрации (например, ['Button', 'Edit']).
                                                      По умолчанию None (возвращаются все интерактивные типы).
     """
     try:
@@ -246,25 +247,26 @@ def scrape_application(name: str, control_types: Optional[List[str]] = None) -> 
 
         for element in all_elements:
             try:
+                # --- ГЛАВНОЕ УСЛОВИЕ: Пропускаем все невидимые элементы ---
                 if not element.is_visible():
                     continue
 
                 element_info = element.element_info
                 control_type = element_info.control_type
 
-                # Фильтрация по заданным типам контролов
                 if control_types and control_type not in control_types:
                     continue
 
                 name_prop = element_info.name
                 text_prop = element.window_text()
 
+                # Пропускаем неинтерактивные или пустые типы
                 if control_type in non_interactive_types:
                     continue
-
                 if control_type == 'Custom' and not name_prop and not text_prop:
                     continue
 
+                # Формируем словарь БЕЗ поля 'is_visible'
                 details = {
                     "name": name_prop,
                     "text": text_prop,
@@ -277,11 +279,9 @@ def scrape_application(name: str, control_types: Optional[List[str]] = None) -> 
                         "bottom": element.rectangle().bottom,
                     }
                 }
-
                 element_details.append(details)
 
             except Exception as e:
-                print(f"Скрытая ошибка при обработке элемента: {e}")
                 continue
         return element_details
 

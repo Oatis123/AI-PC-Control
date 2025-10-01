@@ -49,6 +49,12 @@ gpt5_mini = ChatOpenAI(
     base_url=BASE_URL,
 )
 
+gpt5_nano = ChatOpenAI(
+    model="openai/gpt-5-nano",
+    api_key=POLZA_AI_API_KEY,
+    base_url=BASE_URL,
+)
+
 
 #Meta models
 llama4_maverick = ChatOpenAI(

@@ -41,16 +41,16 @@ def agent_node(state):
 
 def tool_node(state: AgentState) -> dict:
     tools_to_hide = ["scrape_application", "get_installed_software"]
-    
-    previous_ids_to_hide = state.get("ids_to_hide", [])
     last_message = state["messages"][-1]
-
-    is_tool_called_again = any(
+    
+    is_heavy_tool_called = any(
         tc["name"] in tools_to_hide for tc in last_message.tool_calls
     )
 
+    previous_ids_to_hide = state.get("ids_to_hide", [])
     cleaned_messages = []
-    if is_tool_called_again:
+
+    if is_heavy_tool_called:
         for msg in state["messages"]:
             if isinstance(msg, ToolMessage) and msg.tool_call_id in previous_ids_to_hide:
                 cleaned_messages.append(
@@ -74,12 +74,11 @@ def tool_node(state: AgentState) -> dict:
         )
         if tool_call["name"] in tools_to_hide:
             current_ids_to_hide.append(tool_call["id"])
-
-    final_messages = cleaned_messages + new_tool_results
     
-    next_ids_to_hide = current_ids_to_hide if is_tool_called_again else previous_ids_to_hide
-    
-    return {"messages": final_messages, "ids_to_hide": next_ids_to_hide}
+    return {
+        "messages": cleaned_messages + new_tool_results,
+        "ids_to_hide": current_ids_to_hide,
+    }
 
 
 def should_continue(state):
