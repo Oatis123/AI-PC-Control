@@ -10,7 +10,6 @@ from pywinauto import Desktop
 from pywinauto.application import Application
 from pywinauto.findwindows import ElementNotFoundError
 from playwright.sync_api import sync_playwright, Page
-from comtypes.gen.UIAutomationClient import UIA_TogglePatternId, UIA_SelectionItemPatternId, ToggleState_Off, ToggleState_On, ToggleState_Indeterminate
 
 
 def _get_installed_software():

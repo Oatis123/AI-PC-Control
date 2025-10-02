@@ -69,7 +69,6 @@ def sentence_chunks(text):
 
 def speak_streaming(text, speaker_wav="test2.mp3", language="ru", speed=5.0, volume=0.5):
     q = queue.Queue(maxsize=64)
-
     def producer():
         with torch.no_grad():
             for sent in sentence_chunks(text):
