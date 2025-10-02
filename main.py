@@ -22,7 +22,7 @@ XTTS_SR = 24000
 INPUT_SAMPLE_RATE = 16000
 INPUT_FRAMES_PER_BUFFER = 4096
 COMMAND_TIMEOUT_SECONDS = 10
-FOLLOW_UP_TIMEOUT_SECONDS = 8 # Время ожидания следующей команды
+FOLLOW_UP_TIMEOUT_SECONDS = 8
 
 chat_history = []
 
@@ -67,7 +67,7 @@ def sentence_chunks(text):
         yield text[pos:]
 
 
-def speak_streaming(text, speaker_wav="test2.mp3", language="ru", speed=5.0, volume=0.5):
+def speak_streaming(text, speaker_wav="test4.mp3", language="ru", speed=5.0, volume=0.5):
     q = queue.Queue(maxsize=64)
     def producer():
         with torch.no_grad():

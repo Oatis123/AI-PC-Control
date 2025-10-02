@@ -15,7 +15,6 @@ deepseek_v31 = ChatOpenAI(
     base_url=BASE_URL,
 )
 
-
 #Googles models
 gemini20_flash = ChatOpenAI(
     model="google/gemini-2.0-flash-001",
@@ -34,7 +33,6 @@ gemini25_flash = ChatOpenAI(
     api_key=POLZA_AI_API_KEY,
     base_url=BASE_URL,
 )
-
 
 #OpenAI models
 gpt_oss_120b = ChatOpenAI(
@@ -55,10 +53,36 @@ gpt5_nano = ChatOpenAI(
     base_url=BASE_URL,
 )
 
+gpt_o4_mini = ChatOpenAI(
+    model="openai/o4-mini",
+    api_key=POLZA_AI_API_KEY,
+    base_url=BASE_URL,
+)
 
 #Meta models
 llama4_maverick = ChatOpenAI(
     model="meta-llama/llama-4-maverick",
+    api_key=POLZA_AI_API_KEY,
+    base_url=BASE_URL,
+)
+
+#Qwen models
+qwen_plus = ChatOpenAI(
+    model="qwen/qwen-plus",
+    api_key=POLZA_AI_API_KEY,
+    base_url=BASE_URL,
+)
+
+#Cohere models
+command_r = ChatOpenAI(
+    model="cohere/command-r-08-2024",
+    api_key=POLZA_AI_API_KEY,
+    base_url=BASE_URL,
+)
+
+#xAI models
+grok4_fast = ChatOpenAI(
+    model="x-ai/grok-4-fast",
     api_key=POLZA_AI_API_KEY,
     base_url=BASE_URL,
 )

@@ -1,5 +1,5 @@
 
-from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage, AIMessage
 from langgraph.graph import StateGraph, END
 from agent.prompts.main_system_prompt import prompt
 from agent.models.polza_ai_models import *
@@ -9,15 +9,15 @@ import logging
 from typing import List
 from agent.tools.pc_control_tools import *
 from agent.tools.web_tools import search_and_scrape
-from agent.tools.useful_tools import waiting
+from agent.tools.useful_tools import waiting, current_date_time
 import langchain
 
 langchain.debug = True
 
 
-tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command, waiting]
+tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command, waiting, current_date_time]
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = gpt_oss_120b.bind_tools(tools)
+model_with_tools = grok4_fast.bind_tools(tools)
 
 
 logging.basicConfig(
@@ -120,16 +120,37 @@ def request_to_agent(req: List):
     try:
         input_data = {"messages": [SystemMessage(prompt)] + req}
         logging.info("Данные для графа подготовлены.")
+        logging.info("Вызов графа в потоковом режиме...")
         
-        logging.info("Вызов графа...")
-        result = graph.invoke(input_data, config={"recursion_limit": 100})
-        logging.info(f"Граф успешно отработал. Получен результат.")
+        final_answer = None
+        last_chunk = None 
 
-        answer = result["messages"]
-        logging.info("Ответ успешно извлечен из результата.")
-        logging.info(answer)
-        
-        return answer
+        for chunk in graph.stream(input_data, config={"recursion_limit": 100}):
+            if "__end__" not in chunk:
+                logging.info(f"Промежуточный шаг графа: {chunk}")
+            
+            last_chunk = chunk
+
+            if "__end__" in chunk:
+                final_answer = chunk["__end__"]
+
+        logging.info("Граф успешно отработал.")
+
+        if final_answer:
+            answer = final_answer.get("messages")
+            logging.info("Ответ успешно извлечен из финального узла.")
+            logging.info(answer)
+            return answer
+        elif last_chunk and "agent" in last_chunk:
+            agent_messages = last_chunk["agent"].get("messages", [])
+            if agent_messages and isinstance(agent_messages[-1], AIMessage):
+                answer = [agent_messages[-1]]
+                logging.info("Извлечен прямой текстовый ответ от агента.")
+                logging.info(answer)
+                return answer
+        else:
+            logging.warning("Граф завершил работу, но не вернул никакого ответа.")
+            return None
 
     except Exception as e:
         logging.error(f"Произошла ошибка при обработке запроса: {req}", exc_info=True)

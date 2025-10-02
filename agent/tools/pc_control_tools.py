@@ -400,7 +400,7 @@ def interact_with_element_by_rect(
 @tool
 def execute_bash_command(command: str) -> str:
     """
-    Выполняет команду в терминале (shell) и возвращает ее вывод. Запрещены разрушительные команды (rm, del).
+    Выполняет команду в терминале (shell) и возвращает ее вывод. Запрещены разрушительные команды.
 
     Args:
         command (str): Команда для выполнения.
