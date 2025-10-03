@@ -53,12 +53,18 @@ def tool_node(state: AgentState) -> dict:
     if is_heavy_tool_called:
         for msg in state["messages"]:
             if isinstance(msg, ToolMessage) and msg.tool_call_id in previous_ids_to_hide:
-                cleaned_messages.append(
-                    ToolMessage(
-                        content="Результат выполнения предыдущего инструмента скрыт для экономии контекста.",
+                if "Ошибка" in msg.content or "ошибка" in msg.content:
+                    cleaned_messages.append(                    ToolMessage(
+                        content=msg.content,
                         tool_call_id=msg.tool_call_id,
+                    ))
+                else:
+                    cleaned_messages.append(
+                        ToolMessage(
+                            content="Результат выполнения предыдущего инструмента скрыт для экономии контекста.",
+                            tool_call_id=msg.tool_call_id,
+                        )
                     )
-                )
             else:
                 cleaned_messages.append(msg)
     else:
