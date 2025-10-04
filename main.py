@@ -13,6 +13,9 @@ import webrtcvad
 import time
 from collections import deque
 from openai import BadRequestError
+from ctypes import cast, POINTER
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
@@ -22,9 +25,17 @@ from langchain_core.messages import HumanMessage
 from agent.main import request_to_agent
 
 from gui.overlay import SubtitleOverlay
+from utils.sound_utils import play_pause, sound_minus, sound_plus
+
 
 ASR_ENGINE = 'whisper'
+
 WAKE_WORD = "джарвис"
+SOUND_MINUS_WORD = "тише"
+SOUND_PLUS_WORD = "громче"
+PAUSE_WORD = "пауза"
+PLAY_WORD = "продолжи"
+
 MODEL_FOLDER_NAME = "vosk-model-small-ru-0.22"
 WHISPER_MODEL_NAME = "small"
 WAITING_SOUND = "4115442.mp3"
@@ -239,16 +250,46 @@ def listen_for_command(audio_stream, play_sound=True, activation_timeout=None):
 def wait_for_wake_word(audio_stream):
     recognizer = vosk.KaldiRecognizer(vosk_model, INPUT_SAMPLE_RATE)
     recognizer.SetWords(True)
+    
+    print(f"\nОжидание команд ({WAKE_WORD}, {SOUND_PLUS_WORD}, {SOUND_MINUS_WORD}, {PAUSE_WORD}, {PLAY_WORD})...")
+
     while not stop_event.is_set():
-        data = audio_stream.read(4096, exception_on_overflow=False)
-        if recognizer.AcceptWaveform(data):
-            result_json = recognizer.Result()
-            result_dict = json.loads(result_json)
-            text = result_dict.get("text", "")
-            if WAKE_WORD in text:
-                print(f"▶️ Кодовое слово '{WAKE_WORD}' обнаружено!")
-                command_part = text.split(WAKE_WORD, 1)[-1].strip()
-                return command_part
+        try:
+            data = audio_stream.read(4096, exception_on_overflow=False)
+            if recognizer.AcceptWaveform(data):
+                result_json = recognizer.Result()
+                result_dict = json.loads(result_json)
+                text = result_dict.get("text", "")
+
+                if SOUND_MINUS_WORD in text:
+                    print(f"Быстрая команда: '{SOUND_MINUS_WORD}'. Уменьшаю громкость.")
+                    sound_minus()
+                    continue
+
+                if SOUND_PLUS_WORD in text:
+                    print(f"Быстрая команда: '{SOUND_PLUS_WORD}'. Увеличиваю громкость.")
+                    sound_plus()
+                    continue
+
+                if PAUSE_WORD in text:
+                    print(f"Быстрая команда: '{PAUSE_WORD}'. Ставлю на паузу.")
+                    play_pause()
+                    continue
+
+                if PLAY_WORD in text:
+                    print(f"Быстрая команда: '{PLAY_WORD}'. Продолжаю воспроизведение.")
+                    play_pause()
+                    continue
+
+                if WAKE_WORD in text:
+                    print(f"▶️ Кодовое слово '{WAKE_WORD}' обнаружено!")
+                    command_part = text.split(WAKE_WORD, 1)[-1].strip()
+                    return command_part
+
+        except IOError as e:
+            print(f"Ошибка чтения потока в wait_for_wake_word: {e}")
+            break
+            
     return None
 
 
