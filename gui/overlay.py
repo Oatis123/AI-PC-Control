@@ -7,62 +7,64 @@ class SubtitleOverlay(tk.Tk):
         super().__init__()
         self.gui_queue = gui_queue
         self.stop_event_callback = stop_event_callback
-        self.is_agent_writing = False
-        # Максимальное количество пар "вопрос-ответ" для отображения
-        self.max_history_pairs = 6
 
         self.overrideredirect(True)
         self.wm_attributes("-topmost", True)
         self.wm_attributes("-transparentcolor", "black")
         self.config(bg='black')
 
-        window_width = 700
-        window_height = 450
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
-        x_pos = screen_width - window_width - 50
-        y_pos = screen_height - window_height - 50
-        self.geometry(f"{window_width}x{window_height}+{x_pos}+{y_pos}")
+        self.geometry(f"{screen_width}x{screen_height}+0+0")
 
-        self.status_font = tkFont.Font(family="Arial", size=14)
-        self.prefix_font = tkFont.Font(family="Arial", size=16, weight="bold")
-        self.main_font = tkFont.Font(family="Arial", size=16)
+        self.border_color_idle = "#6E6E6E"
+        self.border_color_listening = "#FFFFFF"
+        self.border_color_thinking = "#FF8C00"
+        self.border_color_speaking = "#00E767"
 
-        self.status_label = tk.Label(self, text="", font=self.status_font, fg="#cccccc", bg="black")
-        self.status_label.pack(pady=(10, 5), anchor='w', padx=10)
+        self.top_border = tk.Frame(self, bg=self.border_color_idle, height=5)
+        self.top_border.pack(side='top', fill='x')
+        self.bottom_border = tk.Frame(self, bg=self.border_color_idle, height=5)
+        self.bottom_border.pack(side='bottom', fill='x')
+        self.left_border = tk.Frame(self, bg=self.border_color_idle, width=5)
+        self.left_border.pack(side='left', fill='y')
+        self.right_border = tk.Frame(self, bg=self.border_color_idle, width=5)
+        self.right_border.pack(side='right', fill='y')
 
-        self.history_text = tk.Text(self, bg="black", fg="white", font=self.main_font,
-                                    padx=10, pady=10, bd=0, highlightthickness=0,
-                                    wrap=tk.WORD, state='disabled')
-        self.history_text.pack(expand=True, fill="both")
-        
-        # Спокойная и современная схема
-        self.history_text.tag_configure("prefix_user", foreground="#FF7F50", font=self.prefix_font)  # Coral
-        self.history_text.tag_configure("user_text", foreground="#FFDAB9", font=self.main_font)     # PeachPuff
-        self.history_text.tag_configure("prefix_agent", foreground="#20B2AA", font=self.prefix_font) # LightSeaGreen
-        self.history_text.tag_configure("agent_text", foreground="#AFEEEE", font=self.main_font)    # PaleTurquoise
+        center_frame = tk.Frame(self, bg='black')
+        center_frame.pack(expand=True, fill='both')
+
+        subtitle_width = int(screen_width * 0.8)
+        subtitle_height = 200
+
+        self.content_frame = tk.Frame(center_frame, bg='black', width=subtitle_width, height=subtitle_height)
+        self.content_frame.pack(side='bottom', pady=30)
+        self.content_frame.pack_propagate(False)
+
+        self.status_font = tkFont.Font(family="Arial", size=16)
+        self.main_font = tkFont.Font(family="Arial", size=22)
+
+        self.status_label = tk.Label(self.content_frame, text="", font=self.status_font, fg="#cccccc", bg="black")
+        self.status_label.pack(pady=(5, 2))
+
+        self.agent_text_label = tk.Label(
+            self.content_frame,
+            text="",
+            font=self.main_font,
+            fg="#AFEEEE",
+            bg="black",
+            wraplength=subtitle_width - 20
+        )
+        self.agent_text_label.pack(expand=True, fill="both", padx=10, pady=10)
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.process_queue()
 
-    def _trim_history(self):
-        """Проверяет и удаляет старые сообщения, если история слишком длинная."""
-        # Считаем количество реплик пользователя по префиксу "Вы: "
-        user_reply_count = self.history_text.get("1.0", tk.END).count("Вы: ")
-        
-        if user_reply_count >= self.max_history_pairs:
-            # Находим индекс второго вхождения "Вы: " (это начало второй пары)
-            # Мы удаляем все до этого момента
-            start_of_second_pair = self.history_text.search("Вы: ", "2.0")
-            
-            if start_of_second_pair:
-                # Удаляем все от начала до строки, где найдена вторая пара
-                self.history_text.delete("1.0", f"{start_of_second_pair} linestart")
-
-    def _add_new_line_if_needed(self):
-        if self.history_text.get('1.0', tk.END).strip():
-            if self.history_text.get("end-2c", "end-1c") != "\n":
-                 self.history_text.insert(tk.END, '\n')
+    def set_border_color(self, color):
+        self.top_border.config(bg=color)
+        self.bottom_border.config(bg=color)
+        self.left_border.config(bg=color)
+        self.right_border.config(bg=color)
 
     def on_closing(self):
         print("Окно GUI закрывается, завершаем программу...")
@@ -75,43 +77,24 @@ class SubtitleOverlay(tk.Tk):
             msg_type = message['type']
             msg_text = message.get('text', '')
 
-            self.history_text.config(state='normal')
-
             if msg_type == 'status':
-                self.status_label.config(text=msg_text)
-                active_statuses = ['Говорю...', 'Думаю...', 'Анализ речи...']
-                if msg_text not in active_statuses and self.is_agent_writing:
-                    self.is_agent_writing = False
-                    self._add_new_line_if_needed()
+                if msg_text.strip():
+                    self.status_label.config(text=msg_text)
                 
-                # ИГНОРИРУЕМ команду очистки, просто ничего не делаем
-                # if message.get('clear_main', False):
-                #     self.history_text.delete('1.0', tk.END)
+                if message.get('clear_main'):
+                    self.agent_text_label.config(text="")
 
-            elif msg_type == 'user_input':
-                if self.is_agent_writing:
-                    self.is_agent_writing = False
-                
-                # Вызываем обрезку истории ПЕРЕД добавлением нового сообщения
-                self._trim_history()
-                
-                self._add_new_line_if_needed()
-                self.history_text.insert(tk.END, "Вы: ", "prefix_user")
-                self.history_text.insert(tk.END, msg_text, "user_text")
+                if 'Ожидание' in msg_text:
+                    self.set_border_color(self.border_color_idle)
+                elif msg_text in ['Слушаю команду...', 'Слушаю продолжение...']:
+                    self.set_border_color(self.border_color_listening)
+                elif msg_text == 'Думаю...':
+                    self.set_border_color(self.border_color_thinking)
+                elif msg_text == 'Говорю...':
+                    self.set_border_color(self.border_color_speaking)
 
             elif msg_type == 'agent_response_chunk':
-                if not self.is_agent_writing:
-                    self.is_agent_writing = True
-                    self._add_new_line_if_needed()
-                    self.history_text.insert(tk.END, "Агент: ", "prefix_agent")
-                
-                start_index = self.history_text.search("Агент:", "end-1c", backwards=True)
-                if start_index:
-                    self.history_text.delete(f"{start_index} + 7 chars", tk.END)
-                    self.history_text.insert(tk.END, msg_text, "agent_text")
-
-            self.history_text.see(tk.END)
-            self.history_text.config(state='disabled')
+                self.agent_text_label.config(text=msg_text)
 
         except queue.Empty:
             pass

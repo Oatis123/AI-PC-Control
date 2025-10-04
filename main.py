@@ -13,9 +13,6 @@ import webrtcvad
 import time
 from collections import deque
 from openai import BadRequestError
-from ctypes import cast, POINTER
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
@@ -25,7 +22,7 @@ from langchain_core.messages import HumanMessage
 from agent.main import request_to_agent
 
 from gui.overlay import SubtitleOverlay
-from utils.sound_utils import play_pause, sound_minus, sound_plus
+from utils.media_utils import *
 
 
 ASR_ENGINE = 'whisper'
@@ -35,6 +32,10 @@ SOUND_MINUS_WORD = "тише"
 SOUND_PLUS_WORD = "громче"
 PAUSE_WORD = "пауза"
 PLAY_WORD = "продолжи"
+NEXT_WORD = "дальше"
+BACK_WORD = "назад"
+UP_WORD = "вверх"
+DOWN_WORD = "вниз"
 
 MODEL_FOLDER_NAME = "vosk-model-small-ru-0.22"
 WHISPER_MODEL_NAME = "small"
@@ -83,6 +84,9 @@ if ASR_ENGINE == 'whisper':
     except Exception as e:
         print(f"Ошибка при загрузке модели Whisper: {e}")
         exit()
+
+
+
 
 pa = pyaudio.PyAudio()
 stream = pa.open(
@@ -281,6 +285,24 @@ def wait_for_wake_word(audio_stream):
                     play_pause()
                     continue
 
+                if NEXT_WORD in text:
+                    print(f"Быстрая команда: '{NEXT_WORD}'. Следующий медия.")
+                    next_media()
+                    continue
+                     
+                if BACK_WORD in text:
+                    print(f"Быстрая команда: '{BACK_WORD}'. Предыдущая медия.")
+                    back_media()
+                    continue
+
+                if UP_WORD in text:
+                    print(f"Быстрая команда: '{UP_WORD}'. Вверх.")
+                    up()
+
+                if DOWN_WORD in text:
+                    print(f"Быстрая команда: '{UP_WORD}'. Вниз")
+                    down()
+
                 if WAKE_WORD in text:
                     print(f"▶️ Кодовое слово '{WAKE_WORD}' обнаружено!")
                     command_part = text.split(WAKE_WORD, 1)[-1].strip()
@@ -311,7 +333,9 @@ def voice_assistant_logic():
 
             while command and "время вышло" not in command and "ошибка" not in command:
                 if stop_event.is_set(): break
-                gui_queue.put({'type': 'user_input', 'text': command})
+                
+                gui_queue.put({'type': 'status', 'text': '', 'clear_main': True})
+                
                 print(f"Выполнение запроса: '{command}'")
                 chat_history.append(HumanMessage(content=command))
                 gui_queue.put({'type': 'status', 'text': 'Думаю...'})

@@ -30,3 +30,19 @@ def sound_minus():
 
 def play_pause():
     pyautogui.press('playpause')
+
+
+def next_media():
+    pyautogui.press("nexttrack")
+
+
+def back_media():
+    pyautogui.press("prevtrack")
+
+
+def up():
+    pyautogui.press("up")
+
+
+def down():
+    pyautogui.press("down")
