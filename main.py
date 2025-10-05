@@ -13,6 +13,7 @@ import webrtcvad
 import time
 from collections import deque
 from openai import BadRequestError
+import pyttsx3
 
 from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
@@ -26,6 +27,7 @@ from utils.media_utils import *
 
 
 ASR_ENGINE = 'whisper'
+TTS_ENGINE = 'pyttsx3'
 
 WAKE_WORD = "джарвис"
 SOUND_MINUS_WORD = "тише"
@@ -65,14 +67,39 @@ if not os.path.exists(MODEL_FOLDER_NAME):
     exit()
 vosk_model = vosk.Model(MODEL_FOLDER_NAME)
 
-print("Загрузка модели TTS (Coqui XTTS)...")
-device = "cuda" if torch.cuda.is_available() else "cpu"
-torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
-try:
-    coqui_tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-    print(f"Модель TTS успешно загружена на {device.upper()}.")
-except Exception as e:
-    print(f"Ошибка при загрузке модели TTS: {e}")
+coqui_tts = None
+pyttsx3_engine = None
+
+if TTS_ENGINE == 'xtts':
+    print("Загрузка модели TTS (Coqui XTTS)...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
+    try:
+        coqui_tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+        print(f"Модель TTS (XTTS) успешно загружена на {device.upper()}.")
+    except Exception as e:
+        print(f"Ошибка при загрузке модели XTTS: {e}")
+        exit()
+elif TTS_ENGINE == 'pyttsx3':
+    print("Инициализация системного движка TTS (pyttsx3)...")
+    try:
+        pyttsx3_engine = pyttsx3.init()
+        voices = pyttsx3_engine.getProperty('voices')
+        russian_voice_found = False
+        for voice in voices:
+            if 'russian' in voice.name.lower() or 'ru' in voice.id.lower():
+                pyttsx3_engine.setProperty('voice', voice.id)
+                russian_voice_found = True
+                print(f"Найден и установлен русский голос: {voice.name}")
+                break
+        if not russian_voice_found:
+            print("Предупреждение: Русский голос для pyttsx3 не найден. Будет использован голос по умолчанию.")
+        print("Движок pyttsx3 успешно инициализирован.")
+    except Exception as e:
+        print(f"Ошибка при инициализации pyttsx3: {e}")
+        exit()
+else:
+    print(f"Ошибка: Неизвестный движок TTS '{TTS_ENGINE}'. Доступные варианты: 'xtts', 'pyttsx3'.")
     exit()
 
 whisper_model = None
@@ -85,9 +112,6 @@ if ASR_ENGINE == 'whisper':
         print(f"Ошибка при загрузке модели Whisper: {e}")
         exit()
 
-
-
-
 pa = pyaudio.PyAudio()
 stream = pa.open(
     format=INPUT_FORMAT,
@@ -96,7 +120,6 @@ stream = pa.open(
     input=True,
     frames_per_buffer=VAD_CHUNK_SIZE
 )
-
 
 def sentence_chunks(text):
     pat = re.compile(r'[^\.!\?…]+[\.!\?…]+(?:["»)]?)(?:\s*)', re.DOTALL)
@@ -113,7 +136,6 @@ def sentence_chunks(text):
         full_response += remaining_text
         gui_queue.put({'type': 'agent_response_chunk', 'text': full_response})
         yield remaining_text
-
 
 def speak_streaming(text, speaker_wav="test5.mp3", language="ru", speed=5.0, volume=0.5):
     q = queue.Queue(maxsize=64)
@@ -153,6 +175,18 @@ def speak_streaming(text, speaker_wav="test5.mp3", language="ru", speed=5.0, vol
     t_prod.join()
     t_cons.join()
 
+def speak_pyttsx3(text, volume=0.8):
+    pyttsx3_engine.setProperty('volume', float(volume))
+    
+    sentences = list(sentence_chunks(text))
+
+    for sentence in sentences:
+        if stop_event.is_set():
+            pyttsx3_engine.stop()
+            return
+        pyttsx3_engine.say(sentence)
+
+    pyttsx3_engine.runAndWait()
 
 def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
     if activation_timeout:
@@ -218,7 +252,6 @@ def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
     command = result.get("text", "").strip()
     return command if command else "время вышло"
 
-
 def listen_with_vosk(audio_stream, recognizer):
     print("Слушаю команду (Vosk)...")
     recognizer.Reset()
@@ -237,7 +270,6 @@ def listen_with_vosk(audio_stream, recognizer):
             break
     return "время вышло"
 
-
 def listen_for_command(audio_stream, play_sound=True, activation_timeout=None):
     if play_sound:
         activate_sound.play()
@@ -249,7 +281,6 @@ def listen_for_command(audio_stream, play_sound=True, activation_timeout=None):
     else:
         print(f"Ошибка: Неизвестный движок распознавания '{ASR_ENGINE}'")
         return "ошибка"
-
 
 def wait_for_wake_word(audio_stream):
     recognizer = vosk.KaldiRecognizer(vosk_model, INPUT_SAMPLE_RATE)
@@ -289,7 +320,7 @@ def wait_for_wake_word(audio_stream):
                     print(f"Быстрая команда: '{NEXT_WORD}'. Следующий медия.")
                     next_media()
                     continue
-                     
+                        
                 if BACK_WORD in text:
                     print(f"Быстрая команда: '{BACK_WORD}'. Предыдущая медия.")
                     back_media()
@@ -314,11 +345,10 @@ def wait_for_wake_word(audio_stream):
             
     return None
 
-
 def voice_assistant_logic():
     global chat_history
     stream.start_stream()
-    print(f"\n✅ Система активирована. Движок: {ASR_ENGINE.upper()}.")
+    print(f"\n✅ Система активирована. Движок ASR: {ASR_ENGINE.upper()}. Движок TTS: {TTS_ENGINE.upper()}.")
     try:
         while not stop_event.is_set():
             gui_queue.put({'type': 'status', 'text': f'Ожидание "{WAKE_WORD}"...', 'clear_main': True})
@@ -368,7 +398,11 @@ def voice_assistant_logic():
                 if response_text:
                     gui_queue.put({'type': 'status', 'text': 'Говорю...'})
                     print(f"Ответ агента: {response_text}")
-                    speak_streaming(response_text)
+                    
+                    if TTS_ENGINE == 'xtts':
+                        speak_streaming(response_text)
+                    elif TTS_ENGINE == 'pyttsx3':
+                        speak_pyttsx3(response_text)
                 else:
                     print("Агент вернул пустой ответ.")
                 
@@ -385,10 +419,8 @@ def voice_assistant_logic():
             stream.close()
         pa.terminate()
 
-
 def shutdown_app():
     stop_event.set()
-
 
 assistant_thread = threading.Thread(target=voice_assistant_logic, daemon=True)
 assistant_thread.start()

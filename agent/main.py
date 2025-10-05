@@ -10,12 +10,14 @@ from typing import List
 from agent.tools.pc_control_tools import *
 from agent.tools.web_tools import search_and_scrape
 from agent.tools.useful_tools import waiting, current_date_time
+from agent.tools.screen_tools import get_screenshot_tool
 import langchain
+import json
 
 langchain.debug = True
 
 
-tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command, waiting, current_date_time]
+tools = [get_installed_software, find_application_name, start_application, get_open_windows, scrape_application, interact_with_element_by_rect, execute_bash_command, waiting, current_date_time, get_screenshot_tool]
 tools_by_name = {tool.name: tool for tool in tools}
 model_with_tools = grok4_fast.bind_tools(tools)
 
@@ -40,7 +42,7 @@ def agent_node(state):
 
 
 def tool_node(state: AgentState) -> dict:
-    tools_to_hide = ["scrape_application", "get_installed_software"]
+    tools_to_hide = ["scrape_application", "get_installed_software", "get_screenshot_tool"]
     last_message = state["messages"][-1]
     
     is_heavy_tool_called = any(
@@ -54,10 +56,12 @@ def tool_node(state: AgentState) -> dict:
         for msg in state["messages"]:
             if isinstance(msg, ToolMessage) and msg.tool_call_id in previous_ids_to_hide:
                 if "Ошибка" in msg.content or "ошибка" in msg.content:
-                    cleaned_messages.append(                    ToolMessage(
-                        content=msg.content,
-                        tool_call_id=msg.tool_call_id,
-                    ))
+                    cleaned_messages.append(
+                        ToolMessage(
+                            content=msg.content,
+                            tool_call_id=msg.tool_call_id,
+                        )
+                    )
                 else:
                     cleaned_messages.append(
                         ToolMessage(
@@ -72,12 +76,35 @@ def tool_node(state: AgentState) -> dict:
 
     new_tool_results = []
     current_ids_to_hide = []
+    
     for tool_call in last_message.tool_calls:
         tool = tools_by_name[tool_call["name"]]
-        observation = tool.invoke(tool_call["args"])
-        new_tool_results.append(
-            ToolMessage(content=str(observation), tool_call_id=tool_call["id"])
-        )
+        
+        if tool_call["name"] == "get_screenshot_tool":
+            screenshot = tool.invoke(tool_call["args"])
+            mime_type = screenshot["mime_type"]
+            screenshot_data = screenshot["screenshot_data"]
+            
+            human_message_content = [
+                {
+                    "type": "text",
+                    "text": "Вот запрошенный скриншот для анализа."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{screenshot_data}"}
+                }
+            ]
+            new_tool_results.append(HumanMessage(content=human_message_content))
+            
+            tool_confirmation = json.dumps({"status": "success", "message": "Image provided in a new message."})
+            new_tool_results.append(ToolMessage(content=tool_confirmation, tool_call_id=tool_call["id"]))
+        else:
+            observation = tool.invoke(tool_call["args"])
+            new_tool_results.append(
+                ToolMessage(content=str(observation), tool_call_id=tool_call["id"])
+            )
+        
         if tool_call["name"] in tools_to_hide:
             current_ids_to_hide.append(tool_call["id"])
     
@@ -85,6 +112,7 @@ def tool_node(state: AgentState) -> dict:
         "messages": cleaned_messages + new_tool_results,
         "ids_to_hide": current_ids_to_hide,
     }
+
 
 
 def should_continue(state):

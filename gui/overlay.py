@@ -44,7 +44,7 @@ class SubtitleOverlay(tk.Tk):
         self.status_font = tkFont.Font(family="Arial", size=16)
         self.main_font = tkFont.Font(family="Arial", size=22)
 
-        self.status_label = tk.Label(self.content_frame, text="", font=self.status_font, fg="#cccccc", bg="black")
+        self.status_label = tk.Label(self.content_frame, text="", font=self.status_font, fg="#ffffff", bg="black")
         self.status_label.pack(pady=(5, 2))
 
         self.agent_text_label = tk.Label(
