@@ -27,7 +27,7 @@ from utils.media_utils import *
 
 
 ASR_ENGINE = 'whisper'
-TTS_ENGINE = 'pyttsx3'
+TTS_ENGINE = 'xtts'
 
 WAKE_WORD = "джарвис"
 SOUND_MINUS_WORD = "тише"

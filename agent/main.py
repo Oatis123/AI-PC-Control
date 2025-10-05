@@ -34,6 +34,7 @@ logging.basicConfig(
 class AgentState(TypedDict):
     messages: list[BaseMessage]
     ids_to_hide: Annotated[list[str], operator.add]
+    screenshot_ids_to_hide: Annotated[list[str], operator.add]
 
  
 def agent_node(state):
@@ -50,10 +51,15 @@ def tool_node(state: AgentState) -> dict:
     )
 
     previous_ids_to_hide = state.get("ids_to_hide", [])
+    screenshot_ids_to_hide = state.get("screenshot_ids_to_hide", [])
     cleaned_messages = []
 
     if is_heavy_tool_called:
-        for msg in state["messages"]:
+        i = 0
+        while i < len(state["messages"]):
+            msg = state["messages"][i]
+            
+            # Скрываем ToolMessage от тяжёлых инструментов
             if isinstance(msg, ToolMessage) and msg.tool_call_id in previous_ids_to_hide:
                 if "Ошибка" in msg.content or "ошибка" in msg.content:
                     cleaned_messages.append(
@@ -69,13 +75,46 @@ def tool_node(state: AgentState) -> dict:
                             tool_call_id=msg.tool_call_id,
                         )
                     )
+                
+                if msg.tool_call_id in screenshot_ids_to_hide:
+                    if i + 1 < len(state["messages"]):
+                        next_msg = state["messages"][i + 1]
+                        if isinstance(next_msg, HumanMessage):
+                            content = next_msg.content
+                            if isinstance(content, list):
+                                has_image = any(
+                                    isinstance(c, dict) and c.get("type") == "image_url"
+                                    for c in content
+                                )
+                                if has_image:
+                                    i += 1
+            
+            elif isinstance(msg, HumanMessage):
+                content = msg.content
+                if isinstance(content, list):
+                    has_image = any(
+                        isinstance(c, dict) and c.get("type") == "image_url"
+                        for c in content
+                    )
+                    if has_image and i > 0:
+                        prev_msg = cleaned_messages[-1] if cleaned_messages else None
+                        if (isinstance(prev_msg, ToolMessage) and 
+                            prev_msg.tool_call_id in screenshot_ids_to_hide and
+                            "скрыт для экономии" in prev_msg.content):
+                            i += 1
+                            continue
+                    
+                cleaned_messages.append(msg)
             else:
                 cleaned_messages.append(msg)
+            
+            i += 1
     else:
         cleaned_messages = state["messages"]
 
     new_tool_results = []
     current_ids_to_hide = []
+    current_screenshot_ids = []
     
     for tool_call in last_message.tool_calls:
         tool = tools_by_name[tool_call["name"]]
@@ -99,6 +138,8 @@ def tool_node(state: AgentState) -> dict:
             
             tool_confirmation = json.dumps({"status": "success", "message": "Image provided in a new message."})
             new_tool_results.append(ToolMessage(content=tool_confirmation, tool_call_id=tool_call["id"]))
+            
+            current_screenshot_ids.append(tool_call["id"])
         else:
             observation = tool.invoke(tool_call["args"])
             new_tool_results.append(
@@ -111,7 +152,9 @@ def tool_node(state: AgentState) -> dict:
     return {
         "messages": cleaned_messages + new_tool_results,
         "ids_to_hide": current_ids_to_hide,
+        "screenshot_ids_to_hide": current_screenshot_ids,
     }
+
 
 
 
