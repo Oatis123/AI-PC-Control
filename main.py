@@ -27,7 +27,7 @@ from utils.media_utils import *
 
 
 ASR_ENGINE = 'whisper'
-TTS_ENGINE = 'xtts'
+TTS_ENGINE = 'pyttsx3'
 
 WAKE_WORD = "джарвис"
 SOUND_MINUS_WORD = "тише"
@@ -177,16 +177,32 @@ def speak_streaming(text, speaker_wav="test5.mp3", language="ru", speed=5.0, vol
 
 def speak_pyttsx3(text, volume=0.8):
     pyttsx3_engine.setProperty('volume', float(volume))
+    pat = re.compile(r'[^\.!\?…]+[\.!\?…]+(?:["»)]?)(?:\s*)', re.DOTALL)
+    sentences = []
+    pos = 0
+    for m in pat.finditer(text):
+        sentences.append(m.group(0).strip())
+        pos = m.end()
+    if pos < len(text):
+        remaining = text[pos:].strip()
+        if remaining:
+            sentences.append(remaining)
     
-    sentences = list(sentence_chunks(text))
-
+    if not sentences:
+        sentences = [text]
+    
+    full_response = ""
     for sentence in sentences:
         if stop_event.is_set():
             pyttsx3_engine.stop()
             return
+        
+        full_response += sentence + " "
+        gui_queue.put({'type': 'agent_response_chunk', 'text': full_response.strip()})
+        
         pyttsx3_engine.say(sentence)
+        pyttsx3_engine.runAndWait()
 
-    pyttsx3_engine.runAndWait()
 
 def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
     if activation_timeout:
