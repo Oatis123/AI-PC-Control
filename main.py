@@ -13,7 +13,7 @@ import webrtcvad
 import time
 from collections import deque
 from openai import BadRequestError
-import pyttsx3
+from gtts import gTTS
 
 from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
@@ -27,7 +27,7 @@ from utils.media_utils import *
 
 
 ASR_ENGINE = 'whisper'
-TTS_ENGINE = 'pyttsx3'
+TTS_ENGINE = 'xtts'
 
 WAKE_WORD = "джарвис"
 SOUND_MINUS_WORD = "тише"
@@ -51,7 +51,7 @@ VAD_FRAME_MS = 30
 VAD_CHUNK_SIZE = int(INPUT_SAMPLE_RATE * (VAD_FRAME_MS / 1000.0))
 VAD_SILENCE_TIMEOUT_MS = 1500
 VAD_PRE_BUFFER_MS = 300
-MAX_RETRIES = 3
+MAX_RETRIES = 20
 RETRY_DELAY_SECONDS = 2
 FOLLOW_UP_TIMEOUT_SECONDS = 5
 
@@ -68,7 +68,6 @@ if not os.path.exists(MODEL_FOLDER_NAME):
 vosk_model = vosk.Model(MODEL_FOLDER_NAME)
 
 coqui_tts = None
-pyttsx3_engine = None
 
 if TTS_ENGINE == 'xtts':
     print("Загрузка модели TTS (Coqui XTTS)...")
@@ -80,26 +79,11 @@ if TTS_ENGINE == 'xtts':
     except Exception as e:
         print(f"Ошибка при загрузке модели XTTS: {e}")
         exit()
-elif TTS_ENGINE == 'pyttsx3':
-    print("Инициализация системного движка TTS (pyttsx3)...")
-    try:
-        pyttsx3_engine = pyttsx3.init()
-        voices = pyttsx3_engine.getProperty('voices')
-        russian_voice_found = False
-        for voice in voices:
-            if 'russian' in voice.name.lower() or 'ru' in voice.id.lower():
-                pyttsx3_engine.setProperty('voice', voice.id)
-                russian_voice_found = True
-                print(f"Найден и установлен русский голос: {voice.name}")
-                break
-        if not russian_voice_found:
-            print("Предупреждение: Русский голос для pyttsx3 не найден. Будет использован голос по умолчанию.")
-        print("Движок pyttsx3 успешно инициализирован.")
-    except Exception as e:
-        print(f"Ошибка при инициализации pyttsx3: {e}")
-        exit()
+elif TTS_ENGINE == 'gtts':
+    print("Движок TTS (gTTS) готов к работе.")
+    pass
 else:
-    print(f"Ошибка: Неизвестный движок TTS '{TTS_ENGINE}'. Доступные варианты: 'xtts', 'pyttsx3'.")
+    print(f"Ошибка: Неизвестный движок TTS '{TTS_ENGINE}'. Доступные варианты: 'xtts', 'gtts'.")
     exit()
 
 whisper_model = None
@@ -175,34 +159,19 @@ def speak_streaming(text, speaker_wav="test5.mp3", language="ru", speed=5.0, vol
     t_prod.join()
     t_cons.join()
 
-def speak_pyttsx3(text, volume=0.8):
-    pyttsx3_engine.setProperty('volume', float(volume))
-    pat = re.compile(r'[^\.!\?…]+[\.!\?…]+(?:["»)]?)(?:\s*)', re.DOTALL)
-    sentences = []
-    pos = 0
-    for m in pat.finditer(text):
-        sentences.append(m.group(0).strip())
-        pos = m.end()
-    if pos < len(text):
-        remaining = text[pos:].strip()
-        if remaining:
-            sentences.append(remaining)
-    
-    if not sentences:
-        sentences = [text]
-    
-    full_response = ""
-    for sentence in sentences:
-        if stop_event.is_set():
-            pyttsx3_engine.stop()
-            return
-        
-        full_response += sentence + " "
-        gui_queue.put({'type': 'agent_response_chunk', 'text': full_response.strip()})
-        
-        pyttsx3_engine.say(sentence)
-        pyttsx3_engine.runAndWait()
-
+def speak_gtts(text):
+    try:
+        tts = gTTS(text=text, lang='ru')
+        filename = "temp_speech.mp3"
+        tts.save(filename)
+        gui_queue.put({'type': 'agent_response_chunk', 'text': text})
+        tts_temp = pygame.mixer.Sound(filename)
+        tts_temp_lenght = tts_temp.get_length()
+        tts_temp.play()
+        pygame.time.wait(int(tts_temp_lenght * 1000))
+        os.remove(filename)
+    except Exception as e:
+        print(f"Ошибка при синтезе речи с помощью gTTS: {e}")
 
 def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
     if activation_timeout:
@@ -417,11 +386,12 @@ def voice_assistant_logic():
                     
                     if TTS_ENGINE == 'xtts':
                         speak_streaming(response_text)
-                    elif TTS_ENGINE == 'pyttsx3':
-                        speak_pyttsx3(response_text)
+                    elif TTS_ENGINE == 'gtts':
+                        speak_gtts(response_text)
                 else:
                     print("Агент вернул пустой ответ.")
                 
+                activate_sound.play()
                 gui_queue.put({'type': 'status', 'text': 'Слушаю продолжение...'})
                 command = listen_for_command(stream, play_sound=False, activation_timeout=FOLLOW_UP_TIMEOUT_SECONDS)
 

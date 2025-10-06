@@ -217,12 +217,13 @@ def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
 def scrape_application(name: str, control_types: Optional[List[str]] = None) -> Union[List[Dict[str, Any]], str]:
     """
     Сканирует окно приложения и возвращает список ТОЛЬКО ВИДИМЫХ интерактивных UI-элементов,
-    опционально фильтруя их по типу. В отчет по элементам не добавляется критерий видимости.
+    опционально фильтруя их по типу. Сбор элементов каждого типа ограничен (по умолчанию 80)
+    для повышения производительности. В отчет по элементам не добавляется критерий видимости.
 
     Args:
         name (str): Часть заголовка окна для сканирования.
-        control_types (Optional[List[str]], optional): Список типов контролов для фильтрации (например, ['Button', 'Edit']).
-                                                     По умолчанию None (возвращаются все интерактивные типы).
+        control_types (Optional[List[str]], optional): Список типов контролов для фильтрации.
+                                                        По умолчанию None (возвращаются все интерактивные типы).
     """
     try:
         desktop = Desktop(backend="uia")
@@ -240,32 +241,37 @@ def scrape_application(name: str, control_types: Optional[List[str]] = None) -> 
         all_elements = main_win.descendants()
         element_details = []
 
+        control_type_counts = {}
+        MAX_ELEMENTS_PER_TYPE = 80
+
         non_interactive_types = {
             'Pane', 'Group', 'Separator', 'ToolBar', 'ScrollBar', 'Image'
         }
 
         for element in all_elements:
             try:
-                # --- ГЛАВНОЕ УСЛОВИЕ: Пропускаем все невидимые элементы ---
                 if not element.is_visible():
                     continue
 
                 element_info = element.element_info
                 control_type = element_info.control_type
 
-                if control_types and control_type not in control_types:
+                if control_type_counts.get(control_type, 0) >= MAX_ELEMENTS_PER_TYPE:
                     continue
 
-                name_prop = element_info.name
-                text_prop = element.window_text()
+                if control_types and control_type not in control_types:
+                    continue
 
                 # Пропускаем неинтерактивные или пустые типы
                 if control_type in non_interactive_types:
                     continue
+                
+                name_prop = element_info.name
+                text_prop = element.window_text()
+                
                 if control_type == 'Custom' and not name_prop and not text_prop:
                     continue
 
-                # Формируем словарь БЕЗ поля 'is_visible'
                 details = {
                     "name": name_prop,
                     "text": text_prop,
@@ -280,7 +286,9 @@ def scrape_application(name: str, control_types: Optional[List[str]] = None) -> 
                 }
                 element_details.append(details)
 
-            except Exception as e:
+                control_type_counts[control_type] = control_type_counts.get(control_type, 0) + 1
+
+            except Exception:
                 continue
         return element_details
 
