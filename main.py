@@ -124,6 +124,7 @@ def sentence_chunks(text):
 def speak_streaming(text, speaker_wav="test5.mp3", language="ru", speed=5.0, volume=0.5):
     q = queue.Queue(maxsize=64)
     def producer():
+        punctuation = [".", ",", ":", "-", "?", "!"]
         with torch.no_grad():
             for sent in sentence_chunks(text):
                 try:
@@ -132,6 +133,8 @@ def speak_streaming(text, speaker_wav="test5.mp3", language="ru", speed=5.0, vol
                         pcm16 = (wav_chunk * 32767.0).astype(np.int16).tobytes()
                         q.put(pcm16)
                 except Exception:
+                    for p in punctuation:
+                        sent = sent.replace(p, "")
                     wav = coqui_tts.tts(text=sent, speaker_wav=speaker_wav, language=language, speed=speed)
                     wav = (np.asarray(wav, dtype=np.float32).flatten() * volume).clip(-1.0, 1.0)
                     pcm16 = (wav * 32767.0).astype(np.int16).tobytes()
@@ -377,6 +380,8 @@ def voice_assistant_logic():
                 if response_history:
                     chat_history = response_history
                     response_text = response_history[-1].content
+                    if isinstance(response_text, list):
+                        response_text = response_text[0]["text"]
                 else:
                     response_text = "Произошла ошибка при обработке запроса."
 
