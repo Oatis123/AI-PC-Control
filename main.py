@@ -121,7 +121,7 @@ def sentence_chunks(text):
         gui_queue.put({'type': 'agent_response_chunk', 'text': full_response})
         yield remaining_text
 
-def speak_streaming(text, speaker_wav="test5.mp3", language="ru", speed=5.0, volume=0.5):
+def speak_streaming(text, speaker_wav="test6.mp3", language="ru", speed=5.0, volume=0.5):
     q = queue.Queue(maxsize=64)
     def producer():
         punctuation = [".", ",", ":", "-", "?", "!"]
