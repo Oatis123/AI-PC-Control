@@ -86,3 +86,10 @@ grok4_fast = ChatOpenAI(
     api_key=POLZA_AI_API_KEY,
     base_url=BASE_URL,
 )
+
+#Anthropic
+claude_haiku_45 = ChatOpenAI(
+    model="anthropic/claude-haiku-4.5",
+    api_key=POLZA_AI_API_KEY,
+    base_url=BASE_URL,
+)
