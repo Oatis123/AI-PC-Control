@@ -25,7 +25,6 @@ tools = [get_installed_software,
          interact_with_element_by_rect, 
          execute_bash_command, 
          waiting, 
-         current_date_time, 
          get_screenshot_tool, 
          search_web]
 
@@ -213,7 +212,7 @@ def request_to_agent(req: List):
         final_answer = None
         last_chunk = None 
 
-        for chunk in graph.stream(input_data, config={"recursion_limit": 150}):
+        for chunk in graph.stream(input_data, config={"recursion_limit": 200}):
             if "__end__" not in chunk:
                 logging.info(f"Промежуточный шаг графа: {chunk}")
             

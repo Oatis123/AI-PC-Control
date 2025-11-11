@@ -67,8 +67,8 @@ llama4_maverick = ChatOpenAI(
 )
 
 #Qwen models
-qwen_plus = ChatOpenAI(
-    model="qwen/qwen-plus",
+qwen3_vl = ChatOpenAI(
+    model="qwen/qwen3-vl-235b-a22b-thinking",
     api_key=POLZA_AI_API_KEY,
     base_url=BASE_URL,
 )
