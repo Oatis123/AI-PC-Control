@@ -201,18 +201,18 @@ config = {"recursion_limit": 50}
 #for chunk in graph.stream(input_data, stream_mode="values", config=config):
 #    print(chunk, end="", flush=True)
 
-def request_to_agent(req: List):
+async def request_to_agent(req: List):
     logging.info(f"Получен новый запрос: {req}")
     
     try:
         input_data = {"messages": [SystemMessage(prompt)] + req}
         logging.info("Данные для графа подготовлены.")
-        logging.info("Вызов графа в потоковом режиме...")
+        logging.info("Вызов графа в асинхронном потоковом режиме...")
         
         final_answer = None
         last_chunk = None 
 
-        for chunk in graph.stream(input_data, config={"recursion_limit": 200}):
+        async for chunk in graph.astream(input_data, config={"recursion_limit": 200}):
             if "__end__" not in chunk:
                 logging.info(f"Промежуточный шаг графа: {chunk}")
             

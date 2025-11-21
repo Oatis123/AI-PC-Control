@@ -14,6 +14,7 @@ import time
 from collections import deque
 from openai import BadRequestError
 from gtts import gTTS
+import asyncio
 
 from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
@@ -106,7 +107,7 @@ stream = pa.open(
 )
 
 def sentence_chunks(text):
-    pat = re.compile(r'[^\.!\?…]+[\.!\?…]+(?:["»)]?)(?:\s*)', re.DOTALL)
+    pat = re.compile(r'[^\.!\?…]+[\.!?…]+(?:["»)]?)(?:\s*)', re.DOTALL)
     pos = 0
     full_response = ""
     for m in pat.finditer(text):
@@ -209,7 +210,7 @@ def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
             if is_speech:
                 if not is_speaking:
                     print("Обнаружена речь...")
-                    gui_queue.put({'type': 'status', 'text': 'Говорите...'})
+                    gui_queue.put({'type': 'status', 'text': 'Говорите...'}) 
                     is_speaking = True
                     speech_frames.extend(list(pre_buffer))
                 speech_frames.append(chunk)
@@ -233,7 +234,7 @@ def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
         return "время вышло"
 
     print("Обработка запроса моделью Whisper...")
-    gui_queue.put({'type': 'status', 'text': 'Анализ речи...'})
+    gui_queue.put({'type': 'status', 'text': 'Анализ речи...'}) 
     audio_data = b''.join(speech_frames)
     audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
     result = model.transcribe(audio_np, language="ru", fp16=torch.cuda.is_available())
@@ -333,19 +334,19 @@ def wait_for_wake_word(audio_stream):
             
     return None
 
-def voice_assistant_logic():
+async def voice_assistant_logic():
     global chat_history
     stream.start_stream()
     print(f"\n✅ Система активирована. Движок ASR: {ASR_ENGINE.upper()}. Движок TTS: {TTS_ENGINE.upper()}.")
     try:
         while not stop_event.is_set():
             gui_queue.put({'type': 'status', 'text': f'Ожидание "{WAKE_WORD}"...', 'clear_main': True})
-            command = wait_for_wake_word(stream)
+            command = await asyncio.to_thread(wait_for_wake_word, stream)
             if stop_event.is_set(): break
 
             if not command:
-                gui_queue.put({'type': 'status', 'text': 'Слушаю команду...'})
-                command = listen_for_command(stream)
+                gui_queue.put({'type': 'status', 'text': 'Слушаю команду...'}) 
+                command = await asyncio.to_thread(listen_for_command, stream)
             else:
                 activate_sound.play()
 
@@ -356,17 +357,17 @@ def voice_assistant_logic():
                 
                 print(f"Выполнение запроса: '{command}'")
                 chat_history.append(HumanMessage(content=command))
-                gui_queue.put({'type': 'status', 'text': 'Думаю...'})
+                gui_queue.put({'type': 'status', 'text': 'Думаю...'}) 
                 response_history = None
                 for attempt in range(MAX_RETRIES):
                     if stop_event.is_set(): break
                     try:
-                        response_history = request_to_agent(chat_history)
+                        response_history = await request_to_agent(chat_history)
                         break
                     except BadRequestError as e:
                         print(f"Ошибка (попытка {attempt + 1}/{MAX_RETRIES}): {e}")
                         if attempt < MAX_RETRIES - 1:
-                            time.sleep(RETRY_DELAY_SECONDS)
+                            await asyncio.sleep(RETRY_DELAY_SECONDS)
                         else:
                             print("Не удалось получить ответ от LLM.")
                             response_history = None
@@ -386,19 +387,19 @@ def voice_assistant_logic():
                     response_text = "Произошла ошибка при обработке запроса."
 
                 if response_text:
-                    gui_queue.put({'type': 'status', 'text': 'Говорю...'})
+                    gui_queue.put({'type': 'status', 'text': 'Говорю...'}) 
                     print(f"Ответ агента: {response_text}")
                     
                     if TTS_ENGINE == 'xtts':
-                        speak_streaming(response_text)
+                        await asyncio.to_thread(speak_streaming, response_text)
                     elif TTS_ENGINE == 'gtts':
-                        speak_gtts(response_text)
+                        await asyncio.to_thread(speak_gtts, response_text)
                 else:
                     print("Агент вернул пустой ответ.")
                 
                 activate_sound.play()
-                gui_queue.put({'type': 'status', 'text': 'Слушаю продолжение...'})
-                command = listen_for_command(stream, play_sound=False, activation_timeout=FOLLOW_UP_TIMEOUT_SECONDS)
+                gui_queue.put({'type': 'status', 'text': 'Слушаю продолжение...'}) 
+                command = await asyncio.to_thread(listen_for_command, stream, play_sound=False, activation_timeout=FOLLOW_UP_TIMEOUT_SECONDS)
 
             print(f"\n🔁 Снова жду кодовое слово '{WAKE_WORD}'...")
     except Exception as e:
@@ -413,7 +414,7 @@ def voice_assistant_logic():
 def shutdown_app():
     stop_event.set()
 
-assistant_thread = threading.Thread(target=voice_assistant_logic, daemon=True)
+assistant_thread = threading.Thread(target=lambda: asyncio.run(voice_assistant_logic()), daemon=True)
 assistant_thread.start()
 
 app = SubtitleOverlay(gui_queue=gui_queue, stop_event_callback=shutdown_app)
