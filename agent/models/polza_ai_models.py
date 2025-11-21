@@ -85,11 +85,6 @@ grok4_fast = ChatOpenAI(
     model="x-ai/grok-4.1-fast",
     api_key=POLZA_AI_API_KEY,
     base_url=BASE_URL,
-    # Уберите model_kwargs для этого параметра
-    # Используйте extra_body, чтобы передать "сырой" JSON параметр в API
-    extra_body={
-        "reasoning_effort": "low"
-    }
 )
 
 #Anthropic
