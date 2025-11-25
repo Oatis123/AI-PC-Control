@@ -29,7 +29,7 @@ tools = [get_installed_software,
          search_web]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = grok4_fast.bind_tools(tools)
+model_with_tools = gpt_oss_120b.bind_tools(tools)
 
 
 logging.basicConfig(
