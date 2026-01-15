@@ -1,4 +1,4 @@
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
 from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, END
 import operator
@@ -7,6 +7,9 @@ from models.polza_ai_models import gpt_oss_120b
 from tools.pc_control_tools import interact_with_element_by_rect, scrape_application
 from tools.web_tools import search_web
 from tools.useful_tools import waiting
+from prompts.window_interaction_prompt import window_interaction_agent_prompt as prompt
+
+from langchain_core.tools import tool
 
 import json
 
@@ -178,7 +181,32 @@ graph = workflow.compile()
 
 config = {"recursion_limit": 50}
 
-def request_to_agent(requset: str):
+def request_to_agent(req: str)->str:
     try:
         input_data = {"messages": [SystemMessage(prompt)] + req}
+        response = graph.invoke(input=input_data)
+        return response["messages"][-1].content
+    except Exception as e:
+        return f"Ошибка работы агента: {e}"
+    
+
+@tool
+def interact_with_window(win_name: str, task: str)->str:
+    """
+Delegates a specific task to be performed inside a target window. 
+Use this tool whenever you need to click buttons, type text, read content, or interact with UI elements within an application.
+Arguments:
+- win_name: The exact string name of the window (e.g., "Untitled - Notepad", "Inbox - Gmail"). Get this from your window management tools first.
+- task: A natural language description of what needs to be done inside that window (e.g., "Type 'Hello world'", "Click the Send button", "Search for 'Python'").
+Returns the result of the interaction or an error message.
+"""
+    try:
+        req = {"window_name": win_name, "task": task}
+        req_str = json.dumps(req, ensure_ascii=False)
+        print(req_str)
+        response = request_to_agent(req=req_str)
+        return response
+    except Exception as e:
+        return f"Ошибка при запросе к агенту: {e}"
+    
 
