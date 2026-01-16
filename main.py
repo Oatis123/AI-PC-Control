@@ -28,7 +28,7 @@ from utils.media_utils import *
 
 
 ASR_ENGINE = 'whisper'
-TTS_ENGINE = 'xtts'
+TTS_ENGINE = 'silero'
 
 WAKE_WORD = "джарвис"
 SOUND_MINUS_WORD = "тише"
@@ -69,6 +69,9 @@ if not os.path.exists(MODEL_FOLDER_NAME):
 vosk_model = vosk.Model(MODEL_FOLDER_NAME)
 
 coqui_tts = None
+silero_model = None
+silero_sample_rate = 48000
+silero_speaker = 'aidar'
 
 if TTS_ENGINE == 'xtts':
     print("Загрузка модели TTS (Coqui XTTS)...")
@@ -83,8 +86,21 @@ if TTS_ENGINE == 'xtts':
 elif TTS_ENGINE == 'gtts':
     print("Движок TTS (gTTS) готов к работе.")
     pass
+elif TTS_ENGINE == 'silero':
+    print("Загрузка модели Silero TTS...")
+    device = torch.device('cpu')
+    try:
+        local_file = 'model_silero.pt'
+        if not os.path.isfile(local_file):
+            torch.hub.download_url_to_file('https://models.silero.ai/models/tts/ru/v4_ru.pt', local_file)  
+        silero_model = torch.package.PackageImporter(local_file).load_pickle("tts_models", "model")
+        silero_model.to(device)
+        print("Модель Silero TTS успешно загружена.")
+    except Exception as e:
+        print(f"Ошибка при загрузке Silero TTS: {e}")
+        exit()
 else:
-    print(f"Ошибка: Неизвестный движок TTS '{TTS_ENGINE}'. Доступные варианты: 'xtts', 'gtts'.")
+    print(f"Ошибка: Неизвестный движок TTS '{TTS_ENGINE}'. Доступные варианты: 'xtts', 'gtts', 'silero'.")
     exit()
 
 whisper_model = None
@@ -176,6 +192,21 @@ def speak_gtts(text):
         os.remove(filename)
     except Exception as e:
         print(f"Ошибка при синтезе речи с помощью gTTS: {e}")
+
+def speak_silero(text):
+    try:
+        out = pa.open(format=pyaudio.paInt16, channels=1, rate=silero_sample_rate, output=True)
+        for sent in sentence_chunks(text):
+            audio = silero_model.apply_tts(text=sent,
+                                           speaker=silero_speaker,
+                                           sample_rate=silero_sample_rate)
+            audio_np = audio.numpy() * 32767
+            audio_bytes = audio_np.astype(np.int16).tobytes()
+            out.write(audio_bytes)
+        out.stop_stream()
+        out.close()
+    except Exception as e:
+        print(f"Ошибка при синтезе Silero: {e}")
 
 def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
     if activation_timeout:
@@ -394,6 +425,8 @@ async def voice_assistant_logic():
                         await asyncio.to_thread(speak_streaming, response_text)
                     elif TTS_ENGINE == 'gtts':
                         await asyncio.to_thread(speak_gtts, response_text)
+                    elif TTS_ENGINE == 'silero':
+                        await asyncio.to_thread(speak_silero, response_text)
                 else:
                     print("Агент вернул пустой ответ.")
                 

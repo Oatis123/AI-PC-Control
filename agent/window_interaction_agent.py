@@ -3,11 +3,11 @@ from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, END
 import operator
 
-from models.polza_ai_models import gpt_oss_120b
-from tools.pc_control_tools import interact_with_element_by_rect, scrape_application
-from tools.web_tools import search_web
-from tools.useful_tools import waiting
-from prompts.window_interaction_prompt import window_interaction_agent_prompt as prompt
+from agent.models.polza_ai_models import gpt_oss_120b
+from agent.tools.pc_control_tools import interact_with_element_by_rect, scrape_application
+from agent.tools.web_tools import search_web
+from agent.tools.useful_tools import waiting
+from agent.prompts.window_interaction_prompt import window_interaction_agent_prompt as prompt
 
 from langchain_core.tools import tool
 
@@ -179,12 +179,13 @@ workflow.add_edge("action", "agent")
 
 graph = workflow.compile()
 
-config = {"recursion_limit": 50}
+config = {"recursion_limit": 100}
 
 def request_to_agent(req: str)->str:
     try:
+        req = [req]
         input_data = {"messages": [SystemMessage(prompt)] + req}
-        response = graph.invoke(input=input_data)
+        response = graph.invoke(input=input_data, config=config)
         return response["messages"][-1].content
     except Exception as e:
         return f"Ошибка работы агента: {e}"
@@ -208,5 +209,3 @@ Returns the result of the interaction or an error message.
         return response
     except Exception as e:
         return f"Ошибка при запросе к агенту: {e}"
-    
-

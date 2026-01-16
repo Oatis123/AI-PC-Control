@@ -19,3 +19,4 @@ agent_logs.txt
 vosk-model-ru-0.42
 screenshots
 temp_speech.mp3
+model_silero.pt

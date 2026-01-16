@@ -2,6 +2,7 @@
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage, AIMessage
 from langgraph.graph import StateGraph, END
 from agent.prompts.main_system_prompt import prompt
+from agent.models.openrouter_models import llama4_Scout
 from agent.models.polza_ai_models import *
 from typing import TypedDict, Annotated
 import operator
@@ -11,6 +12,7 @@ from agent.tools.pc_control_tools import *
 from agent.tools.web_tools import search_web
 from agent.tools.useful_tools import waiting, current_date_time
 from agent.tools.screen_tools import get_screenshot_tool
+from agent.window_interaction_agent import interact_with_window
 import langchain
 import json
 
@@ -24,10 +26,11 @@ tools = [get_installed_software,
          execute_bash_command, 
          waiting, 
          get_screenshot_tool, 
-         search_web]
+         search_web,
+         interact_with_window]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = gpt_oss_120b.bind_tools(tools)
+model_with_tools = llama4_Scout.bind_tools(tools)
 
 
 logging.basicConfig(
@@ -194,7 +197,7 @@ workflow.add_edge("action", "agent")
 
 graph = workflow.compile()
 
-config = {"recursion_limit": 50}
+config = {"recursion_limit": 100}
 
 #for chunk in graph.stream(input_data, stream_mode="values", config=config):
 #    print(chunk, end="", flush=True)
