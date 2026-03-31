@@ -3,7 +3,7 @@ from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, END
 import operator
 
-from agent.models.polza_ai_models import gpt_oss_120b
+from agent.models.openrouter_models import *
 from agent.tools.pc_control_tools import interact_with_element_by_rect, scrape_application
 from agent.tools.web_tools import search_web
 from agent.tools.useful_tools import waiting
@@ -21,7 +21,7 @@ tools = [
 ]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = gpt_oss_120b.bind_tools(tools)
+model_with_tools = xiaomi_mimo_v2_flash.bind_tools(tools)
 
 
 class AgentState(TypedDict):
@@ -32,7 +32,14 @@ class AgentState(TypedDict):
 
  
 def agent_node(state):
+    # 1. Заглушка для пустого контента (чтобы Xiaomi не крашился)
+    for msg in state["messages"]:
+        if getattr(msg, "type", "") == "ai" and not getattr(msg, "content", "") and getattr(msg, "tool_calls", None):
+            msg.content = "Вызываю инструменты..."
+
     response = model_with_tools.invoke(state["messages"])
+    
+    # 2. КРИТИЧЕСКИ ВАЖНО: склеиваем старую историю с новым ответом!
     return {"messages": state["messages"] + [response]}
 
 

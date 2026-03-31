@@ -2,7 +2,7 @@
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage, AIMessage
 from langgraph.graph import StateGraph, END
 from agent.prompts.main_system_prompt import prompt
-from agent.models.openrouter_models import llama4_Scout
+from agent.models.openrouter_models import *
 from agent.models.polza_ai_models import *
 from typing import TypedDict, Annotated
 import operator
@@ -25,12 +25,12 @@ tools = [get_installed_software,
          get_open_windows,
          execute_bash_command, 
          waiting, 
-         get_screenshot_tool, 
+        #  get_screenshot_tool, 
          search_web,
          interact_with_window]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = llama4_Scout.bind_tools(tools)
+model_with_tools = xiaomi_mimo_v2_flash.bind_tools(tools)
 
 
 logging.basicConfig(
@@ -50,7 +50,14 @@ class AgentState(TypedDict):
 
  
 def agent_node(state):
+    # 1. Заглушка для пустого контента (чтобы Xiaomi не крашился)
+    for msg in state["messages"]:
+        if getattr(msg, "type", "") == "ai" and not getattr(msg, "content", "") and getattr(msg, "tool_calls", None):
+            msg.content = "Вызываю инструменты..."
+
     response = model_with_tools.invoke(state["messages"])
+    
+    # 2. КРИТИЧЕСКИ ВАЖНО: склеиваем старую историю с новым ответом!
     return {"messages": state["messages"] + [response]}
 
 
@@ -197,12 +204,12 @@ workflow.add_edge("action", "agent")
 
 graph = workflow.compile()
 
-config = {"recursion_limit": 100}
+config = {"recursion_limit": 200}
 
 #for chunk in graph.stream(input_data, stream_mode="values", config=config):
 #    print(chunk, end="", flush=True)
 
-async def request_to_agent(req: List):
+async def request_to_agent_async(req: List):
     logging.info(f"Получен новый запрос: {req}")
     
     try:
@@ -243,3 +250,14 @@ async def request_to_agent(req: List):
     except Exception as e:
         logging.error(f"Произошла ошибка при обработке запроса: {req}", exc_info=True)
         raise e
+    
+def request_to_agent_sync(req: List):
+    logging.info(f"Получен новый запрос: {req}")
+    
+    input_data = {"messages": [SystemMessage(prompt)] + req}
+    
+    response = graph.invoke(input=input_data, config=config)
+    
+    logging.info(f"Ответ от агента: {response}")
+    
+    return response["messages"][-1].content

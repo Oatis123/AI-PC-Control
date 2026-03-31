@@ -8,11 +8,11 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 BASE_URL = "https://openrouter.ai/api/v1"
 
 
-deepseek_v31 = ChatOpenAI(
-    model="deepseek/deepseek-chat-v3.1",
+nvidia_nemotron_3_super_120b_a12b = ChatOpenAI(
+    model="nvidia/nemotron-3-super-120b-a12b",
     api_key=OPENROUTER_API_KEY,
     base_url=BASE_URL,
-    temperature=0.9,
+    temperature=0.5,
     model_kwargs={
         "reasoning": {
             "enabled": False
@@ -20,85 +20,35 @@ deepseek_v31 = ChatOpenAI(
     },
     extra_body={
         "provider": {
-            "order": ["fireworks"],
+            "sort": "latency",
             "allow_fallbacks": False
         }
     }
 )
 
-qwen3_235b = ChatOpenAI(
-    model="qwen/qwen3-235b-a22b-2507",
+mistral_small_4 = ChatOpenAI(
+    model="mistralai/mistral-small-2603",
     api_key=OPENROUTER_API_KEY,
     base_url=BASE_URL,
-    temperature=0.7,
+    temperature=0.5,
     extra_body={
         "provider": {
-            "order": ["deepinfra/fp8"],
+            "order": ["mistral"],
             "allow_fallbacks": False
-        }
-    }
-)
-
-qwen3_next_80b =ChatOpenAI(
-    model="qwen/qwen3-next-80b-a3b-instruct",
-    api_key=OPENROUTER_API_KEY,
-    base_url=BASE_URL,
-    temperature=0.7,
-    extra_body={
-        "provider": {
-            "order": ["deepinfra/fp8"],
-            "allow_fallbacks": False
-        }
-    }
-)
-
-kimi_k2 = ChatOpenAI(
-    model="moonshotai/kimi-k2-0905",
-    api_key=OPENROUTER_API_KEY,
-    base_url=BASE_URL,
-    temperature=0.7,
-    extra_body={
-        "provider": {
-            "order": ["parasail/fp8"],
-            "allow_fallbacks": False
-        }
-    }
-)
-
-llama4_Scout = ChatOpenAI(
-    model="meta-llama/llama-4-scout",
-    api_key=OPENROUTER_API_KEY,
-    base_url=BASE_URL,
-    temperature=0.8,
-    extra_body={
-        "provider": {
-            "order": ["friendli"],
-            "allow_fallbacks": True
         }
     },
-    default_headers={
-        "X-Title": "Data-Sama",
-
-    }
-)
-
-grok41_fast = ChatOpenAI(
-    model="x-ai/grok-4.1-fast",
-    api_key=OPENROUTER_API_KEY,
-    base_url=BASE_URL,
-    temperature=0.7,
     model_kwargs={
         "reasoning": {
-            "enabled": False
+            "enabled": True
         }
     }
 )
 
-xaomi_mimo_v2_flash = ChatOpenAI(
-    model="xiaomi/mimo-v2-flash:free",
+xiaomi_mimo_v2_flash = ChatOpenAI(
+    model="xiaomi/mimo-v2-flash",
     api_key=OPENROUTER_API_KEY,
     base_url=BASE_URL,
-    temperature=0.7,
+    temperature=0.5,
     extra_body={
         "provider": {
             "order": ["xiaomi/fp8"],
@@ -107,25 +57,7 @@ xaomi_mimo_v2_flash = ChatOpenAI(
     },
     model_kwargs={
         "reasoning": {
-            "enabled": False
-        }
-    }
-)
-
-gpt_oss_120b_exacto = ChatOpenAI(
-    model="openai/gpt-oss-120b:exacto",
-    api_key=OPENROUTER_API_KEY,
-    base_url=BASE_URL,
-    temperature=0.7,
-    extra_body={
-        "provider": {
-            "order": ["deepinfra/fp4"],
-            "allow_fallbacks": False
-        }
-    },
-    model_kwargs={
-        "reasoning": {
-            "effort": "low"
+            "enabled": True
         }
     }
 )

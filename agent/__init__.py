@@ -1,1 +1,1 @@
-from main import request_to_agent
+from .main import request_to_agent_async, request_to_agent_sync 
