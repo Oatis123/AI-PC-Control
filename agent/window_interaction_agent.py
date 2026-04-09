@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, END
 import operator
 
 from agent.models.openrouter_models import *
-from agent.tools.pc_control_tools import interact_with_element_by_rect, scrape_application
+from agent.tools.pc_control_tools import interact_with_element_by_id, scrape_application
 from agent.tools.web_tools import search_web
 from agent.tools.useful_tools import waiting
 from agent.prompts.window_interaction_prompt import window_interaction_agent_prompt as prompt
@@ -15,13 +15,13 @@ import json
 
 tools = [
     scrape_application, 
-    interact_with_element_by_rect, 
+    interact_with_element_by_id, 
     waiting,
     search_web
 ]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = xiaomi_mimo_v2_flash.bind_tools(tools)
+model_with_tools = glm_5.bind_tools(tools)
 
 
 class AgentState(TypedDict):

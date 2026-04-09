@@ -30,7 +30,7 @@ tools = [get_installed_software,
          interact_with_window]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = xiaomi_mimo_v2_flash.bind_tools(tools)
+model_with_tools = glm_5.bind_tools(tools)
 
 
 logging.basicConfig(

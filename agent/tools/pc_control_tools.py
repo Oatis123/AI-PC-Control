@@ -11,6 +11,8 @@ from pywinauto.application import Application
 from pywinauto.findwindows import ElementNotFoundError
 from playwright.sync_api import sync_playwright, Page
 
+ELEMENTS_CACHE = {}
+CURRENT_ID = 0
 
 def _get_installed_software():
     all_apps = set()
@@ -214,17 +216,23 @@ def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
 
 
 @tool
-def scrape_application(name: str, control_types: Optional[List[str]] = None) -> Union[List[Dict[str, Any]], str]:
+def scrape_application(name: str, control_types: Optional[List[str]] = None) -> str:
     """
-    Сканирует окно приложения и возвращает список ТОЛЬКО ВИДИМЫХ интерактивных UI-элементов,
-    опционально фильтруя их по типу. Сбор элементов каждого типа ограничен (по умолчанию 80)
-    для повышения производительности. В отчет по элементам не добавляется критерий видимости.
+    Сканирует окно приложения и возвращает иерархическое (XML-подобное) представление 
+    всех видимых интерактивных элементов. 
+    
+    Каждому активному элементу (кнопки, поля ввода и т.д.) присваивается уникальный числовой 'id'.
+    Контейнеры (панели, группы) выводятся без id для понимания структуры окна.
+    Используй полученные 'id' для инструментов взаимодействия.
 
     Args:
-        name (str): Часть заголовка окна для сканирования.
-        control_types (Optional[List[str]], optional): Список типов контролов для фильтрации.
-                                                        По умолчанию None (возвращаются все интерактивные типы).
+        name (str): Часть заголовка окна для поиска.
+        control_types (Optional[List[str]]): Список типов для фильтрации (необязательно).
     """
+    global ELEMENTS_CACHE, CURRENT_ID
+    ELEMENTS_CACHE.clear()
+    CURRENT_ID = 0
+    
     try:
         desktop = Desktop(backend="uia")
         main_win_spec = desktop.window(title_re=f".*{name}.*", found_index=0)
@@ -238,70 +246,77 @@ def scrape_application(name: str, control_types: Optional[List[str]] = None) -> 
             main_win.set_focus()
             main_win_spec.wait('active', timeout=5)
 
-        all_elements = main_win.descendants()
-        element_details = []
+        container_types = {'Pane', 'Group', 'Window', 'ToolBar', 'MenuBar', 'ScrollBar', 'Image', 'Custom'}
 
-        control_type_counts = {}
-        MAX_ELEMENTS_PER_TYPE = 80
-
-        non_interactive_types = {
-            'Pane', 'Group', 'Separator', 'ToolBar', 'ScrollBar', 'Image'
-        }
-
-        for element in all_elements:
+        def build_xml_tree(element, indent=0) -> str:
+            global CURRENT_ID, ELEMENTS_CACHE
             try:
                 if not element.is_visible():
-                    continue
-
-                element_info = element.element_info
-                control_type = element_info.control_type
-
-                if control_type_counts.get(control_type, 0) >= MAX_ELEMENTS_PER_TYPE:
-                    continue
-
-                if control_types and control_type not in control_types:
-                    continue
-
-                # Пропускаем неинтерактивные или пустые типы
-                if control_type in non_interactive_types:
-                    continue
-                
-                name_prop = element_info.name
-                text_prop = element.window_text()
-                
-                if control_type == 'Custom' and not name_prop and not text_prop:
-                    continue
-
-                details = {
-                    "name": name_prop,
-                    "text": text_prop,
-                    "control_type": control_type,
-                    "is_enabled": element.is_enabled(),
-                    "rectangle": {
-                        "left": element.rectangle().left,
-                        "top": element.rectangle().top,
-                        "right": element.rectangle().right,
-                        "bottom": element.rectangle().bottom,
-                    }
-                }
-                element_details.append(details)
-
-                control_type_counts[control_type] = control_type_counts.get(control_type, 0) + 1
-
+                    return ""
             except Exception:
-                continue
-        return element_details
+                return ""
+
+            control_type = element.element_info.control_type
+            name_prop = element.element_info.name or ""
+            
+            children_xml = ""
+            for child in element.children():
+                children_xml += build_xml_tree(child, indent + 1)
+
+            is_interactive = control_type not in container_types and element.is_enabled()
+            
+            if not is_interactive and not children_xml.strip():
+                return ""
+
+            tag_name = control_type.replace("Control", "")
+            attrs = []
+            
+            if name_prop:
+                safe_name = name_prop.replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
+                attrs.append(f'name="{safe_name}"')
+                
+            if is_interactive:
+                element_id = CURRENT_ID
+                attrs.append(f'id="{element_id}"')
+                
+                rect = element.rectangle()
+                ELEMENTS_CACHE[element_id] = {
+                    "left": rect.left, "top": rect.top,
+                    "right": rect.right, "bottom": rect.bottom
+                }
+                CURRENT_ID += 1
+                
+            attr_string = " ".join(attrs)
+            prefix = "  " * indent
+            
+            if children_xml:
+                if attr_string:
+                    return f"{prefix}<{tag_name} {attr_string}>\n{children_xml}{prefix}</{tag_name}>\n"
+                else:
+                    return f"{prefix}<{tag_name}>\n{children_xml}{prefix}</{tag_name}>\n"
+            else:
+                if attr_string:
+                    return f"{prefix}<{tag_name} {attr_string}/>\n"
+                else:
+                    return f"{prefix}<{tag_name}/>\n"
+
+        xml_output = build_xml_tree(main_win)
+        
+        if not xml_output.strip():
+            return "Окно найдено, но в нем нет видимых интерактивных элементов."
+            
+        return xml_output
 
     except ElementNotFoundError:
         return f"Произошла ошибка: Окно с именем '{name}' не найдено после ожидания."
     except Exception as e:
-        return f"Произошла непредвиденная ошибка при работе с '{name}': {e}"
+        return f"Произошла непредвиденная ошибка при работе с '{name}': {type(e).__name__}: {e}"
     
 
 @tool
-def interact_with_element_by_rect(
+def interact_with_element_by_id(
     name: str,
-    rectangle: Dict[str, int],
+    element_id: int,
     action: str,
     text_to_set: Optional[str] = None
 ) -> Union[str, Any]:
@@ -310,8 +325,7 @@ def interact_with_element_by_rect(
 
     Args:
         name (str): Часть заголовка окна приложения для поиска. Например, 'Mozilla Firefox' или 'Калькулятор'.
-        rectangle (Dict[str, int]): Словарь с точными координатами элемента, полученный от `scrape_application`. 
-                                   Должен содержать целочисленные ключи: 'left', 'top', 'right', 'bottom'.
+        element (int): ID целевого элемента, полученный от `scrape_application`. 
         action (str): Действие, которое необходимо выполнить над элементом. Поддерживаемые действия:
                       - Клики: 'click', 'double_click', 'right_click'.
                       - Работа с текстом: 'set_text', 'get_text', 'press_enter'.
@@ -345,10 +359,10 @@ def interact_with_element_by_rect(
                     continue
 
                 elem_rect = element.rectangle()
-                if (elem_rect.left == rectangle['left'] and
-                    elem_rect.top == rectangle['top'] and
-                    elem_rect.right == rectangle['right'] and
-                    elem_rect.bottom == rectangle['bottom']):
+                if (elem_rect.left == ELEMENTS_CACHE[element_id]['left'] and
+                    elem_rect.top == ELEMENTS_CACHE[element_id]['top'] and
+                    elem_rect.right == ELEMENTS_CACHE[element_id]['right'] and
+                    elem_rect.bottom == ELEMENTS_CACHE[element_id]['bottom']):
                     
                     target_element = element
                     break
@@ -357,7 +371,7 @@ def interact_with_element_by_rect(
 
         if not target_element:
             if 'zoom' not in action:
-                   return f"Ошибка: Элемент с координатами {rectangle} не найден."
+                   return f"Ошибка: Элемент с id {ELEMENTS_CACHE[element_id]} не найден."
 
         action = action.lower()
         if action == 'click':
@@ -396,7 +410,7 @@ def interact_with_element_by_rect(
             
         else:
             return f"Ошибка: Неизвестное действие '{action}'."
-
+        
         return f"Действие '{action}' успешно выполнено."
 
     except ElementNotFoundError:

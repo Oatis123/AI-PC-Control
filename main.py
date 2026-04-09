@@ -21,7 +21,7 @@ from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
 from langchain_core.messages import HumanMessage
-from agent.main import request_to_agent
+from agent.main import request_to_agent_async
 
 from gui.overlay import SubtitleOverlay
 from utils.media_utils import *
@@ -393,7 +393,7 @@ async def voice_assistant_logic():
                 for attempt in range(MAX_RETRIES):
                     if stop_event.is_set(): break
                     try:
-                        response_history = await request_to_agent(chat_history)
+                        response_history = await request_to_agent_async(chat_history)
                         break
                     except BadRequestError as e:
                         print(f"Ошибка (попытка {attempt + 1}/{MAX_RETRIES}): {e}")
