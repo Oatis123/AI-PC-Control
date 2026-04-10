@@ -87,3 +87,21 @@ kimi_k25 = ChatOpenAI(
         }
     }
 )
+
+deepseek_v32 = ChatOpenAI(
+    model="deepseek/deepseek-v3.2",
+    api_key=OPENROUTER_API_KEY,
+    base_url=BASE_URL,
+    temperature=0.5,
+    model_kwargs={
+        "reasoning": {
+            "enabled": False
+        }
+    },
+    extra_body={
+        "provider": {
+            "order": ["friendli"],
+            "allow_fallbacks": False
+        }
+    }
+)

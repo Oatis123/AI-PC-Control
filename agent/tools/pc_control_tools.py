@@ -11,6 +11,8 @@ from pywinauto.application import Application
 from pywinauto.findwindows import ElementNotFoundError
 from playwright.sync_api import sync_playwright, Page
 
+import pyautogui
+
 ELEMENTS_CACHE = {}
 CURRENT_ID = 0
 
@@ -234,8 +236,10 @@ def scrape_application(name: str, control_types: Optional[List[str]] = None) -> 
     CURRENT_ID = 0
     
     try:
+        app_name = name.split(" - ")[-1].strip() if " - " in name else name.strip()
+        
         desktop = Desktop(backend="uia")
-        main_win_spec = desktop.window(title_re=f".*{name}.*", found_index=0)
+        main_win_spec = desktop.window(title_re=f".*{app_name}.*", found_index=0)
 
         if not main_win_spec.exists(timeout=5):
             return f"Ошибка: Окно с именем, содержащим '{name}', не найдено."
@@ -316,8 +320,8 @@ def scrape_application(name: str, control_types: Optional[List[str]] = None) -> 
 @tool
 def interact_with_element_by_id(
     name: str,
-    element_id: int,
-    action: str,
+    element_id: int = -1,
+    action: str = None,
     text_to_set: Optional[str] = None
 ) -> Union[str, Any]:
     """
@@ -340,8 +344,10 @@ def interact_with_element_by_id(
             - В случае ошибки — строка с описанием ошибки (например, "Ошибка: Элемент с координатами ... не найден.").
     """
     try:
+        app_name = name.split(" - ")[-1].strip() if " - " in name else name.strip()
+
         desktop = Desktop(backend="uia")
-        main_win_spec = desktop.window(title_re=f".*{name}.*", found_index=0)
+        main_win_spec = desktop.window(title_re=f".*{app_name}.*", found_index=0)
 
         if not main_win_spec.exists(timeout=5):
             return f"Ошибка: Окно с именем '{name}' не найдено."
@@ -386,7 +392,19 @@ def interact_with_element_by_id(
                 return "Ошибка: для действия 'set_text' необходимо передать аргумент 'text_to_set'."
             
             target_element.click_input()
-            target_element.type_keys(text_to_set, with_spaces=True)
+            time.sleep(0.2)
+
+            pyautogui.hotkey('ctrl', 'a')
+            pyautogui.press('delete')
+
+            pyautogui.write(text_to_set, interval=0.01)
+            
+        elif action == "type_text_blind":
+            if not text_to_set:
+                return "Ошибка: нужен text_to_set."
+
+            main_win.set_focus()
+            pyautogui.write(text_to_set, interval=0.01)
             
         elif action == 'press_enter':
             target_element.type_keys('{ENTER}')

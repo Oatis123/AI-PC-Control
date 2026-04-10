@@ -21,7 +21,7 @@ from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
 from langchain_core.messages import HumanMessage
-from agent.main import request_to_agent_async
+from agent.agent import request_to_agent_async
 
 from gui.overlay import SubtitleOverlay
 from utils.media_utils import *
