@@ -9,7 +9,6 @@ from langchain_core.tools import tool
 from pywinauto import Desktop
 from pywinauto.application import Application
 from pywinauto.findwindows import ElementNotFoundError
-from playwright.sync_api import sync_playwright, Page
 
 import pyautogui
 
@@ -179,43 +178,6 @@ def get_open_windows():
         return "не найдено открытых окон"
     
     return "\n".join(window_titles)
-
-
-def _start_app_with_playwright(app_name: str, port: int = 9222) -> Optional[subprocess.Popen]:
-    app_name_lower = app_name.lower()
-    classic_app_map = _get_classic_app_paths()
-    executable_path = None
-    for name, path in classic_app_map.items():
-        if app_name_lower in name:
-            executable_path = path
-            break
-    
-    if not executable_path:
-        return None
-        
-    command = f'"{executable_path}" --remote-debugging-port={port}'
-    proc = subprocess.Popen(shlex.split(command))
-    time.sleep(3.0)
-    return proc
-
-
-def _scrape_pywinauto_element(element: Any, results_list: List[Dict[str, Any]]):
-    try:
-        element_info = {
-            "name": element.element_info.name,
-            "class_name": element.element_info.class_name,
-            "control_type": element.element_info.control_type,
-            "rectangle": str(element.element_info.rectangle),
-            "is_visible": element.is_visible(),
-            "is_enabled": element.is_enabled(),
-        }
-        results_list.append(element_info)
-
-        for child in element.children():
-            _scrape_pywinauto_element(child, results_list)
-    except Exception:
-        pass
-
 
 @tool
 def scrape_application(name: str, control_types: Optional[List[str]] = None) -> str:
