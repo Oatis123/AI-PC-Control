@@ -8,24 +8,18 @@ import threading
 import queue
 import re
 import numpy as np
-import whisper
 import webrtcvad
 import time
+import asyncio
 from collections import deque
+from faster_whisper import WhisperModel
 from openai import BadRequestError
 from gtts import gTTS
-import asyncio
 
-from TTS.api import TTS
-from TTS.tts.configs.xtts_config import XttsConfig
-from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
-from TTS.config.shared_configs import BaseDatasetConfig
 from langchain_core.messages import HumanMessage
 from agent.agent import request_to_agent_async
-
 from gui.overlay import SubtitleOverlay
 from utils.media_utils import *
-
 
 ASR_ENGINE = 'whisper'
 TTS_ENGINE = 'silero'
@@ -43,7 +37,6 @@ DOWN_WORD = "вниз"
 MODEL_FOLDER_NAME = "vosk-model-small-ru-0.22"
 WHISPER_MODEL_NAME = "small"
 WAITING_SOUND = "4115442.mp3"
-XTTS_SR = 24000
 INPUT_SAMPLE_RATE = 16000
 INPUT_CHANNELS = 1
 INPUT_FORMAT = pyaudio.paInt16
@@ -68,24 +61,12 @@ if not os.path.exists(MODEL_FOLDER_NAME):
     exit()
 vosk_model = vosk.Model(MODEL_FOLDER_NAME)
 
-coqui_tts = None
 silero_model = None
 silero_sample_rate = 48000
 silero_speaker = 'aidar'
 
-if TTS_ENGINE == 'xtts':
-    print("Загрузка модели TTS (Coqui XTTS)...")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
-    try:
-        coqui_tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-        print(f"Модель TTS (XTTS) успешно загружена на {device.upper()}.")
-    except Exception as e:
-        print(f"Ошибка при загрузке модели XTTS: {e}")
-        exit()
-elif TTS_ENGINE == 'gtts':
+if TTS_ENGINE == 'gtts':
     print("Движок TTS (gTTS) готов к работе.")
-    pass
 elif TTS_ENGINE == 'silero':
     print("Загрузка модели Silero TTS...")
     device = torch.device('cpu')
@@ -100,17 +81,19 @@ elif TTS_ENGINE == 'silero':
         print(f"Ошибка при загрузке Silero TTS: {e}")
         exit()
 else:
-    print(f"Ошибка: Неизвестный движок TTS '{TTS_ENGINE}'. Доступные варианты: 'xtts', 'gtts', 'silero'.")
+    print(f"Ошибка: Неизвестный движок TTS '{TTS_ENGINE}'.")
     exit()
 
 whisper_model = None
 if ASR_ENGINE == 'whisper':
-    print(f"Загрузка модели Whisper ({WHISPER_MODEL_NAME})...")
+    print(f"Загрузка модели faster-whisper ({WHISPER_MODEL_NAME})...")
     try:
-        whisper_model = whisper.load_model(WHISPER_MODEL_NAME)
-        print("Модель Whisper успешно загружена.")
+        device_type = "cuda" if torch.cuda.is_available() else "cpu"
+        compute_type = "float16" if torch.cuda.is_available() else "int8"
+        whisper_model = WhisperModel(WHISPER_MODEL_NAME, device=device_type, compute_type=compute_type)
+        print("Модель faster-whisper успешно загружена.")
     except Exception as e:
-        print(f"Ошибка при загрузке модели Whisper: {e}")
+        print(f"Ошибка при загрузке модели faster-whisper: {e}")
         exit()
 
 pa = pyaudio.PyAudio()
@@ -137,47 +120,6 @@ def sentence_chunks(text):
         full_response += remaining_text
         gui_queue.put({'type': 'agent_response_chunk', 'text': full_response})
         yield remaining_text
-
-def speak_streaming(text, speaker_wav="test.wav", language="ru", speed=5.0, volume=0.5):
-    q = queue.Queue(maxsize=64)
-    def producer():
-        punctuation = [".", ",", ":", "-", "?", "!"]
-        with torch.no_grad():
-            for sent in sentence_chunks(text):
-                try:
-                    for wav_chunk in coqui_tts.tts_stream(text=sent, speaker_wav=speaker_wav, language=language, speed=speed):
-                        wav_chunk = (np.asarray(wav_chunk, dtype=np.float32).flatten() * volume).clip(-1.0, 1.0)
-                        pcm16 = (wav_chunk * 32767.0).astype(np.int16).tobytes()
-                        q.put(pcm16)
-                except Exception:
-                    for p in punctuation:
-                        sent = sent.replace(p, "")
-                    wav = coqui_tts.tts(text=sent, speaker_wav=speaker_wav, language=language, speed=speed)
-                    wav = (np.asarray(wav, dtype=np.float32).flatten() * volume).clip(-1.0, 1.0)
-                    pcm16 = (wav * 32767.0).astype(np.int16).tobytes()
-                    q.put(pcm16)
-        q.put(None)
-
-    def consumer():
-        out = pa.open(format=pyaudio.paInt16, channels=1, rate=XTTS_SR, output=True)
-        try:
-            while not stop_event.is_set():
-                try:
-                    data = q.get(timeout=0.1)
-                    if data is None: break
-                    out.write(data)
-                except queue.Empty:
-                    continue
-        finally:
-            out.stop_stream()
-            out.close()
-
-    t_prod = threading.Thread(target=producer, daemon=True)
-    t_cons = threading.Thread(target=consumer, daemon=True)
-    t_prod.start()
-    t_cons.start()
-    t_prod.join()
-    t_cons.join()
 
 def speak_gtts(text):
     try:
@@ -212,7 +154,7 @@ def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
     if activation_timeout:
         print(f"Ожидание команды ({activation_timeout} сек)...")
     else:
-        print("Слушаю команду (Whisper)...")
+        print("Слушаю команду (faster-whisper)...")
 
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     frames_per_second = int(INPUT_SAMPLE_RATE / VAD_CHUNK_SIZE)
@@ -264,12 +206,14 @@ def listen_with_vad_whisper(audio_stream, model, activation_timeout=None):
     if not speech_frames or not is_speaking:
         return "время вышло"
 
-    print("Обработка запроса моделью Whisper...")
+    print("Обработка запроса моделью faster-whisper...")
     gui_queue.put({'type': 'status', 'text': 'Анализ речи...'}) 
     audio_data = b''.join(speech_frames)
     audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-    result = model.transcribe(audio_np, language="ru", fp16=torch.cuda.is_available())
-    command = result.get("text", "").strip()
+    
+    segments, _ = model.transcribe(audio_np, language="ru")
+    command = "".join([segment.text for segment in segments]).strip()
+    
     return command if command else "время вышло"
 
 def listen_with_vosk(audio_stream, recognizer):
@@ -421,9 +365,7 @@ async def voice_assistant_logic():
                     gui_queue.put({'type': 'status', 'text': 'Говорю...'}) 
                     print(f"Ответ агента: {response_text}")
                     
-                    if TTS_ENGINE == 'xtts':
-                        await asyncio.to_thread(speak_streaming, response_text)
-                    elif TTS_ENGINE == 'gtts':
+                    if TTS_ENGINE == 'gtts':
                         await asyncio.to_thread(speak_gtts, response_text)
                     elif TTS_ENGINE == 'silero':
                         await asyncio.to_thread(speak_silero, response_text)
