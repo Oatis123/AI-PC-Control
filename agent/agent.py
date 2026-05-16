@@ -27,15 +27,16 @@ tools = [get_installed_software,
          interact_with_window]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = glm_5.bind_tools(tools)
+model_with_tools = gpt_oss_120b.bind_tools(tools)
 
 
 logging.basicConfig(
     level=logging.INFO,
-    filename='agent_logs.txt',
-    filemode='a',
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    encoding='utf-8'
+    handlers=[
+        logging.FileHandler('agent_logs.txt', mode='a', encoding='utf-8'),
+        logging.StreamHandler()
+    ],
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
 
