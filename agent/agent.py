@@ -10,14 +10,11 @@ import logging
 from typing import List
 from agent.tools.pc_control_tools import *
 from agent.tools.web_tools import search_web
-from agent.tools.useful_tools import waiting, current_date_time
+from agent.tools.useful_tools import waiting
 from agent.tools.screen_tools import get_screenshot_tool
 from agent.window_interaction_agent import interact_with_window
 import langchain
 import json
-
-langchain.debug = True
-
 
 tools = [get_installed_software, 
          find_application_name, 
@@ -50,18 +47,22 @@ class AgentState(TypedDict):
 
  
 def agent_node(state):
+    logging.info("--- Вход в agent_node ---")
     # 1. Заглушка для пустого контента (чтобы Xiaomi не крашился)
     for msg in state["messages"]:
         if getattr(msg, "type", "") == "ai" and not getattr(msg, "content", "") and getattr(msg, "tool_calls", None):
             msg.content = "Вызываю инструменты..."
 
+    logging.info(f"Количество сообщений в истории: {len(state['messages'])}")
     response = model_with_tools.invoke(state["messages"])
+    logging.info(f"Ответ агента получен. Содержит tool_calls: {bool(getattr(response, 'tool_calls', None))}")
     
     # 2. КРИТИЧЕСКИ ВАЖНО: склеиваем старую историю с новым ответом!
     return {"messages": state["messages"] + [response]}
 
 
 def tool_node(state: AgentState) -> dict:
+    logging.info("--- Вход в tool_node ---")
     tools_to_hide = ["scrape_application", "get_installed_software", "get_screenshot_tool"]
     last_message = state["messages"][-1]
     
@@ -76,12 +77,14 @@ def tool_node(state: AgentState) -> dict:
     )
 
     should_clean_history = is_heavy_tool_called or (is_search_web_called_now and previous_search_web_id)
+    logging.info(f"Очистка истории необходима: {should_clean_history}")
 
     previous_ids_to_hide = state.get("ids_to_hide", [])
     screenshot_ids_to_hide = state.get("screenshot_ids_to_hide", [])
     cleaned_messages = []
 
     if should_clean_history:
+        logging.info("Выполняется очистка контекста от тяжелых результатов...")
         i = 0
         while i < len(state["messages"]):
             msg = state["messages"][i]
@@ -136,8 +139,10 @@ def tool_node(state: AgentState) -> dict:
     current_screenshot_ids = list(screenshot_ids_to_hide)
     current_search_web_id = None
 
+    logging.info(f"Вызов инструментов: {[tc['name'] for tc in last_message.tool_calls]}")
     for tool_call in last_message.tool_calls:
         tool = tools_by_name[tool_call["name"]]
+        logging.info(f"Выполнение инструмента: {tool_call['name']} с аргументами: {tool_call['args']}")
         
         if tool_call["name"] == "search_web":
             current_search_web_id = tool_call["id"]
@@ -166,6 +171,7 @@ def tool_node(state: AgentState) -> dict:
         if tool_call["name"] in tools_to_hide:
             current_ids_to_hide.append(tool_call["id"])
     
+    logging.info("Все инструменты выполнены.")
     return {
         "messages": cleaned_messages + new_tool_results,
         "ids_to_hide": current_ids_to_hide,
@@ -179,8 +185,10 @@ def tool_node(state: AgentState) -> dict:
 def should_continue(state):
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        logging.info("Цикл продолжается: агент запросил вызов инструментов.")
         return "continue"
     else:
+        logging.info("Цикл завершен: агент вернул финальный ответ.")
         return "end"
 
 
