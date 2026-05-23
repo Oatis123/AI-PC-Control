@@ -180,7 +180,7 @@ def get_open_windows():
     return "\n".join(window_titles)
 
 @tool
-def scrape_application(name: str, control_types: Optional[List[str]] = None) -> str:
+def scrape_application(name: str) -> str:
     """
     Сканирует окно приложения и возвращает иерархическое (XML-подобное) представление 
     всех видимых интерактивных элементов. 
@@ -339,7 +339,7 @@ def interact_with_element_by_id(
 
         if not target_element:
             if 'zoom' not in action:
-                   return f"Ошибка: Элемент с id {ELEMENTS_CACHE[element_id]} не найден."
+                return f"Ошибка: Элемент с id {ELEMENTS_CACHE[element_id]} не найден."
 
         action = action.lower()
         if action == 'click':
@@ -353,13 +353,35 @@ def interact_with_element_by_id(
             if text_to_set is None:
                 return "Ошибка: для действия 'set_text' необходимо передать аргумент 'text_to_set'."
             
+            # 1. Кликаем по элементу — это выведет окно на передний план
             target_element.click_input()
+            time.sleep(0.15)
+
+            # 2. Определяем нужный язык и переключаем раскладку активного окна
+            import ctypes
+            
+            # Проверяем, есть ли хоть одна русская буква
+            has_cyrillic = any('а' <= c <= 'я' or 'А' <= c <= 'Я' or c in 'ёЁ' for c in text_to_set)
+            # 0x0419 = Русский, 0x0409 = Английский (США)
+            hkl = 0x0419 if has_cyrillic else 0x0409
+            
+            # Берём хэндл окна, которое сейчас в фокусе (после нашего клика)
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            # Посылаем системное сообщение WM_INPUTLANGCHANGEREQUEST (0x0050)
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, hkl)
+            
+            # ВАЖНО: Винда меняет раскладку асинхронно, даём ей 200мс на подумать
             time.sleep(0.2)
 
+            # 3. Стираем старое содержимое
             pyautogui.hotkey('ctrl', 'a')
             pyautogui.press('delete')
+            time.sleep(0.1)
 
+            # 4. Вводим текст — теперь pyautogui попадет по нужным скан-кодам
             pyautogui.write(text_to_set, interval=0.01)
+            
+            return f"Действие '{action}' успешно выполнено."
             
         elif action == "type_text_blind":
             if not text_to_set:
@@ -369,7 +391,12 @@ def interact_with_element_by_id(
             pyautogui.write(text_to_set, interval=0.01)
             
         elif action == 'press_enter':
-            target_element.type_keys('{ENTER}')
+            # Вместо клика по элементу, жестко активируем само окно
+            main_win.set_focus()
+            time.sleep(0.1)
+            
+            # Вариант А: Отправляем Enter через встроенный синтаксис pywinauto
+            main_win.type_keys('~')
             
         elif action == 'get_text':
             return target_element.window_text()

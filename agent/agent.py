@@ -3,7 +3,6 @@ from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, To
 from langgraph.graph import StateGraph, END
 from agent.prompts.main_system_prompt import prompt
 from agent.models.openrouter_models import *
-from agent.models.polza_ai_models import *
 from typing import TypedDict, Annotated
 import operator
 import logging
@@ -16,7 +15,7 @@ from agent.window_interaction_agent import interact_with_window
 import langchain
 import json
 
-tools = [get_installed_software, 
+tools = [
          find_application_name, 
          start_application, 
          get_open_windows,
@@ -27,7 +26,7 @@ tools = [get_installed_software,
          interact_with_window]
 
 tools_by_name = {tool.name: tool for tool in tools}
-model_with_tools = gpt_oss_120b.bind_tools(tools)
+model_with_tools = gemma4_26b_a4b.bind_tools(tools)
 
 
 logging.basicConfig(
